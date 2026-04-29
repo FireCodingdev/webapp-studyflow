@@ -13,9 +13,6 @@ import {
   doc,
   getDoc,
   setDoc,
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -30,14 +27,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
-let db;
-try {
-  db = initializeFirestore(app, {
-    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-  });
-} catch (e) {
-  db = getFirestore(app);
-}
+// Observação: alguns ambientes/CDNs podem não expor APIs avançadas de cache
+// em todas as versões. Para máxima compatibilidade em hospedagem estática,
+// usamos o Firestore padrão.
+const db = getFirestore(app);
 
 export { auth, db };
 
