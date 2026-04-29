@@ -372,11 +372,18 @@ body {
 }
 
 .offline-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3000;
+  display: none;
   background: var(--warning);
-  color: black;
+  color: #111;
   text-align: center;
-  padding: 8px;
-  font-weight: bold;
+  padding: 10px 12px;
+  font-weight: 800;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 #sync-indicator {

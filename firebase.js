@@ -54,14 +54,9 @@ export async function syncToFirestore(userId, data) {
 }
 
 export async function loadFromFirestore(userId) {
-  try {
-    const snap = await getDoc(doc(db, 'users', userId));
-    if (snap.exists()) return snap.data();
-    return null;
-  } catch (err) {
-    console.error('Erro ao carregar dados:', err);
-    return null;
-  }
+  const snap = await getDoc(doc(db, 'users', userId));
+  if (snap.exists()) return snap.data();
+  return null;
 }
 
 // ===== AUTH FUNCTIONS =====

@@ -167,7 +167,7 @@ window.addEventListener('online', async () => {
 
 window.addEventListener('offline', () => {
   STATE.isOnline = false;
-  document.getElementById('offline-banner').style.display = 'flex';
+  document.getElementById('offline-banner').style.display = 'block';
   updateSyncStatus('offline');
 });
 
@@ -220,10 +220,10 @@ async function initAppForUser(user) {
   if (avatarEl) avatarEl.textContent = initials;
   if (nameEl) nameEl.textContent = name;
 
-  // Carrega os dados locais primeiro para resposta instantânea
-  loadLocal();
+  // Regra: quando online, prioriza a nuvem (Firestore) e só usa local como fallback.
+  // Quando offline, usa apenas local.
+  let loaded = false;
 
-  // Tenta puxar do Firestore para atualizar (com timeout de 10s para não travar)
   if (STATE.isOnline) {
     showSyncIndicator(true);
     updateSyncStatus('syncing');
@@ -238,15 +238,36 @@ async function initAppForUser(user) {
         STATE.tasks = cloudData.tasks || [];
         STATE.flashcards = cloudData.flashcards || [];
         saveLocal();
+        loaded = true;
+      } else {
+        // Sem doc na nuvem: tenta local (ex: dados criados offline em outra sessão)
+        loaded = loadLocal();
       }
     } catch (err) {
       console.warn('Falha ao carregar dados da nuvem:', err.message);
-      updateSyncStatus('error');
+      // Se falhou por rede, entra em modo offline e usa dados locais
+      STATE.isOnline = navigator.onLine;
+      if (!STATE.isOnline) {
+        document.getElementById('offline-banner').style.display = 'block';
+        updateSyncStatus('offline');
+      } else {
+        updateSyncStatus('error');
+      }
+      loaded = loadLocal();
     }
     showSyncIndicator(false);
     if (STATE.isOnline) updateSyncStatus('synced');
   } else {
+    loaded = loadLocal();
     updateSyncStatus('local');
+  }
+
+  if (!loaded) {
+    // Garante arrays válidos mesmo sem nuvem/local
+    STATE.subjects = STATE.subjects || [];
+    STATE.classes = STATE.classes || [];
+    STATE.tasks = STATE.tasks || [];
+    STATE.flashcards = STATE.flashcards || [];
   }
 
   showMainApp();
@@ -273,7 +294,7 @@ function showMainApp() {
   initDayButtons();
 
   if (!STATE.isOnline) {
-    document.getElementById('offline-banner').style.display = 'flex';
+    document.getElementById('offline-banner').style.display = 'block';
   }
 }
 
