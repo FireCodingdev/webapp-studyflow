@@ -94,15 +94,24 @@ Regras:
           { inline_data: { mime_type: mimeType, data: imageBase64 } },
         ],
       }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 4096,
+        responseMimeType: 'application/json', // força JSON puro — sem markdown, sem texto
+      },
     };
 
-    const apiKey  = geminiKey.value();
-    const apiResp = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(geminiBody),
-    });
+    let apiResp;
+    try {
+      const apiKey = geminiKey.value();
+      apiResp = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(geminiBody),
+      });
+    } catch (networkErr) {
+      return res.status(502).json({ error: `Erro de rede ao chamar Gemini: ${networkErr.message}` });
+    }
 
     if (!apiResp.ok) {
       const errData = await apiResp.json().catch(() => ({}));
@@ -110,28 +119,34 @@ Regras:
       return res.status(apiResp.status).json({ error: `Gemini: ${msg}` });
     }
 
-    const data    = await apiResp.json();
-    const parts = data?.candidates?.[0]?.content?.parts || [];
+    const data = await apiResp.json();
+
+    // gemini-2.5-flash é thinking model: parts[0] pode ser o raciocínio interno (thought: true)
+    // buscamos a primeira part sem a flag thought, que contém o JSON real
+    const parts   = data?.candidates?.[0]?.content?.parts || [];
     const rawText = (
-      parts.find(p => !p.thought && p.text)?.text  // part sem thought flag
-      ?? parts[parts.length - 1]?.text             // fallback: última part
+      parts.find(p => !p.thought && p.text)?.text  // part de resposta real
+      ?? parts[parts.length - 1]?.text              // fallback: última part
       ?? ''
     );
+
+    // Sanitização defensiva (caso responseMimeType seja ignorado por algum motivo)
     const cleaned = rawText
-      .replace(/```json\n?/gi, '')
-      .replace(/```\n?/gi, '')
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*/gi, '')
       .trim();
 
-    // Tenta extrair JSON mesmo que venha com texto ao redor
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
+      console.error('[geminiProxy] rawText sem JSON:', rawText.slice(0, 300));
       return res.status(500).json({ error: 'IA retornou formato inesperado. Tente novamente.' });
     }
 
     try {
       const parsed = JSON.parse(jsonMatch[0]);
       return res.status(200).json(parsed);
-    } catch {
+    } catch (parseErr) {
+      console.error('[geminiProxy] JSON.parse falhou:', parseErr.message, jsonMatch[0].slice(0, 300));
       return res.status(500).json({ error: 'IA retornou formato inesperado. Tente novamente.' });
     }
   }
