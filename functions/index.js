@@ -111,7 +111,12 @@ Regras:
     }
 
     const data    = await apiResp.json();
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const parts = data?.candidates?.[0]?.content?.parts || [];
+    const rawText = (
+      parts.find(p => !p.thought && p.text)?.text  // part sem thought flag
+      ?? parts[parts.length - 1]?.text             // fallback: última part
+      ?? ''
+    );
     const cleaned = rawText
       .replace(/```json\n?/gi, '')
       .replace(/```\n?/gi, '')
