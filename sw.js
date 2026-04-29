@@ -1,6 +1,7 @@
 // ===== SERVICE WORKER - StudyFlow =====
-const CACHE_NAME = 'studyflow-v8';
+const CACHE_NAME = 'studyflow-v9';
 const STATIC_ASSETS = [
+  '/',
   '/index.html',
   '/styles.css',
   '/app.js',
@@ -10,11 +11,16 @@ const STATIC_ASSETS = [
 
 // Install: cache all static assets
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS.filter(url => !url.startsWith('http')));
-    })
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+
+    // Cacheia item-a-item para não abortar tudo se algum arquivo falhar.
+    await Promise.allSettled(
+      STATIC_ASSETS
+        .filter((u) => !u.startsWith('http'))
+        .map((u) => cache.add(new Request(u, { cache: 'reload' })))
+    );
+  })());
   self.skipWaiting();
 });
 
@@ -30,7 +36,41 @@ self.addEventListener('activate', (event) => {
 
 // Fetch: cache-first for static, network-first for Firebase
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
+  let url;
+  try {
+    url = new URL(event.request.url);
+  } catch {
+    return;
+  }
+
+  // Navegação (app instalado / refresh): network-first com fallback robusto.
+  if (event.request.mode === 'navigate') {
+    event.respondWith((async () => {
+      try {
+        const response = await fetch(event.request);
+        if (response && response.ok) {
+          const cache = await caches.open(CACHE_NAME);
+          cache.put('/index.html', response.clone());
+        }
+        return response;
+      } catch {
+        const cached = await caches.match('/index.html');
+        if (cached) return cached;
+        return new Response(
+          `<!doctype html><html lang="pt-BR"><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+          <title>StudyFlow</title>
+          <body style="margin:0;font-family:system-ui;background:#0d0f14;color:#f0f2f7;display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center;padding:24px">
+            <div>
+              <div style="font-weight:800;font-size:18px;margin-bottom:6px">StudyFlow</div>
+              <div style="color:#8b90a0;font-weight:700">Você está offline. Conecte-se e tente novamente.</div>
+            </div>
+          </body></html>`,
+          { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+        );
+      }
+    })());
+    return;
+  }
 
   // Google Fonts: stale-while-revalidate
   if (url.hostname.includes('fonts.googleapis.com') || url.hostname.includes('fonts.gstatic.com')) {
@@ -62,20 +102,21 @@ self.addEventListener('fetch', (event) => {
 
   // Static assets: cache-first
   event.respondWith(
-    caches.match(event.request).then((cached) => {
+    (async () => {
+      const cached = await caches.match(event.request);
       if (cached) return cached;
-      return fetch(event.request).then((response) => {
+
+      try {
+        const response = await fetch(event.request);
         if (response && response.status === 200) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          const cache = await caches.open(CACHE_NAME);
+          cache.put(event.request, response.clone());
         }
         return response;
-      }).catch(() => {
-        // Offline fallback: return index.html for navigation
-        if (event.request.mode === 'navigate') {
-          return caches.match('/index.html');
-        }
-      });
-    })
+      } catch {
+        // Se não tem cache, devolve erro explícito ao invés de undefined (evita ERR_FAILED).
+        return Response.error();
+      }
+    })()
   );
 });
