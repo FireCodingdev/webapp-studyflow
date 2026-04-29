@@ -56,6 +56,134 @@ button {
 
 a { color: inherit; text-decoration: none; }
 
+.page-content {
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.greeting-kicker {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  font-weight: 900;
+  color: rgba(108, 99, 255, 0.95);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.greeting-title {
+  font-family: var(--font-head);
+  font-size: clamp(30px, 6vw, 44px);
+  line-height: 1.05;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin-bottom: 18px;
+}
+
+.dashboard-hero {
+  padding: 4px 0 6px;
+}
+
+.dashboard-widgets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 12px 0 20px;
+}
+
+.widget {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius);
+  padding: 16px 16px 14px;
+}
+
+.widget h3 {
+  font-family: var(--font-head);
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.section-block {
+  margin-top: 18px;
+}
+
+.section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.section-header h3 {
+  font-family: var(--font-head);
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+
+.text-btn {
+  color: rgba(108, 99, 255, 0.95);
+  font-weight: 800;
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.text-btn:hover {
+  background: rgba(108,99,255,0.10);
+}
+
+.list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.empty-state {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius);
+  padding: 22px 18px;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 10px;
+}
+
+.empty-state svg {
+  width: 64px;
+  height: 64px;
+  opacity: 0.35;
+  color: rgba(240,242,247,0.75);
+}
+
+.empty-state p {
+  color: var(--text2);
+  font-weight: 700;
+}
+
+.empty-state button {
+  margin-top: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(108,99,255,0.55);
+  background: rgba(108,99,255,0.08);
+  color: rgba(210, 208, 255, 0.98);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.empty-state button:hover {
+  background: rgba(108,99,255,0.13);
+  border-color: rgba(108,99,255,0.75);
+}
+
 /* ==========================================================================
    2. TELA DE CARREGAMENTO (SPLASH)
    ========================================================================== */
@@ -499,17 +627,60 @@ a { color: inherit; text-decoration: none; }
 }
 
 .stat-card {
-  background: var(--bg2);
-  padding: 20px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  padding: 16px;
   border-radius: var(--radius);
-  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 88px;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-1px);
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.10);
+}
+
+.stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  background: var(--bg3);
+  border: 1px solid rgba(255,255,255,0.07);
+  flex: 0 0 auto;
+}
+
+.stat-i-classes { background: rgba(0, 210, 255, 0.08); border-color: rgba(0, 210, 255, 0.18); }
+.stat-i-tasks { background: rgba(255, 159, 67, 0.10); border-color: rgba(255, 159, 67, 0.22); }
+.stat-i-exams { background: rgba(255, 101, 132, 0.10); border-color: rgba(255, 101, 132, 0.22); }
+
+.stat-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .stat-value {
   font-family: var(--font-head);
-  font-size: 2rem;
-  color: var(--accent);
+  font-size: 22px;
+  color: var(--text);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+.stat-label {
+  color: var(--text2);
   font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 /* Flashcards */
@@ -599,6 +770,16 @@ a { color: inherit; text-decoration: none; }
 
   .topbar {
     padding-left: 6px;
+  }
+
+  .dashboard-widgets {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 18px;
   }
 }
 
