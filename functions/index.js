@@ -114,8 +114,20 @@ Regras:
     const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const cleaned = rawText
+      .replace(/```json\n?/gi, '')
+      .replace(/```\n?/gi, '')
+      .trim();
+
+    // Tenta extrair JSON mesmo que venha com texto ao redor
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return res.status(500).json({ error: 'IA retornou formato inesperado. Tente novamente.' });
+    }
+
     try {
-      const parsed = JSON.parse(cleaned);
+      const parsed = JSON.parse(jsonMatch[0]);
       return res.status(200).json(parsed);
     } catch {
       return res.status(500).json({ error: 'IA retornou formato inesperado. Tente novamente.' });
