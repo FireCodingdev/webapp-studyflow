@@ -173,7 +173,23 @@ window.addEventListener('offline', () => {
 
 // ===== AUTH INIT =====
 window.addEventListener('DOMContentLoaded', () => {
+  let authResolved = false;
+
+  // Timeout de segurança: se o Firebase demorar mais de 8s, mostra a tela de login
+  const authTimeout = setTimeout(() => {
+    if (!authResolved) {
+      authResolved = true;
+      console.warn('Firebase auth timeout — exibindo tela de login');
+      STATE.currentUser = null;
+      showAuthScreen();
+    }
+  }, 8000);
+
   onAuthStateChanged(auth, async (user) => {
+    if (authResolved) return;
+    authResolved = true;
+    clearTimeout(authTimeout);
+
     if (user) {
       STATE.currentUser = user;
       await initAppForUser(user);
@@ -224,6 +240,7 @@ function showAuthScreen() {
 }
 
 function showMainApp() {
+  document.getElementById('splash').classList.add('hide');
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('main-app').style.display = 'flex';
 
@@ -238,10 +255,6 @@ function showMainApp() {
   if (!STATE.isOnline) {
     document.getElementById('offline-banner').style.display = 'flex';
   }
-
-  setTimeout(() => {
-    document.getElementById('splash').classList.add('hide');
-  }, 800);
 }
 
 // ===== AUTH HANDLERS =====
