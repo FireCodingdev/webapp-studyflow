@@ -1108,3 +1108,58 @@ if ('serviceWorker' in navigator) {
     });
   });
 }
+// ===== PWA INSTALL BANNER =====
+let deferredInstallPrompt = null;
+const INSTALL_DISMISSED_KEY = 'studyflow_install_dismissed';
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+
+  // Não mostra se o usuário já dispensou antes
+  if (!localStorage.getItem(INSTALL_DISMISSED_KEY)) {
+    showInstallBanner();
+  }
+});
+
+// Esconde o banner se o app já foi instalado
+window.addEventListener('appinstalled', () => {
+  hideInstallBanner();
+  deferredInstallPrompt = null;
+  showToast('✅ StudyFlow instalado com sucesso!');
+});
+
+function showInstallBanner() {
+  const banner = document.getElementById('install-banner');
+  if (banner) banner.style.display = 'block';
+}
+
+function hideInstallBanner() {
+  const banner = document.getElementById('install-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+window.triggerInstall = async function() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const { outcome } = await deferredInstallPrompt.userChoice;
+  if (outcome === 'accepted') {
+    deferredInstallPrompt = null;
+    hideInstallBanner();
+  }
+};
+
+window.dismissInstallBanner = function() {
+  hideInstallBanner();
+  // Lembra que o usuário dispensou (por 7 dias)
+  const expiry = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  localStorage.setItem(INSTALL_DISMISSED_KEY, String(expiry));
+};
+
+// Verifica se o dismissal expirou (após 7 dias mostra de novo)
+(function checkDismissalExpiry() {
+  const expiry = parseInt(localStorage.getItem(INSTALL_DISMISSED_KEY) || '0');
+  if (expiry && Date.now() > expiry) {
+    localStorage.removeItem(INSTALL_DISMISSED_KEY);
+  }
+})();
