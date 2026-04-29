@@ -803,31 +803,125 @@ function initDayButtons() {
 }
 
 function renderSchedule() {
-  const dayClasses = STATE.classes.filter(c => c.day === STATE.selectedDay)
-    .sort((a, b) => a.start.localeCompare(b.start));
   const el = document.getElementById('schedule-day-classes');
   if (!el) return;
-  el.innerHTML = dayClasses.length === 0 ? `
-    <div class="empty-state">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-      <p>Nenhuma aula em ${DAYS[STATE.selectedDay]}</p>
-      <button onclick="openAddClass()">Adicionar aula</button>
-    </div>` : dayClasses.map(cls => renderClassCard(cls)).join('');
+
+  const today = new Date().getDay();
+  const sel   = STATE.selectedDay;
+
+  // Conta aulas por dia para mostrar badges nos day-btns
+  document.querySelectorAll('.day-btn').forEach(btn => {
+    const d     = parseInt(btn.dataset.day);
+    const count = STATE.classes.filter(c => c.day === d).length;
+    btn.querySelector('.day-count')?.remove();
+    if (count > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'day-count';
+      badge.textContent = count;
+      btn.appendChild(badge);
+    }
+    btn.classList.toggle('day-today', d === today);
+  });
+
+  const dayClasses = STATE.classes
+    .filter(c => c.day === sel)
+    .sort((a, b) => a.start.localeCompare(b.start));
+
+  if (dayClasses.length === 0) {
+    el.innerHTML = `
+      <div class="sched-empty">
+        <div class="sched-empty-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+            <rect x="3" y="4" width="18" height="18" rx="2.5"/>
+            <path d="M16 2v4M8 2v4M3 10h18"/>
+          </svg>
+        </div>
+        <p class="sched-empty-title">Nenhuma aula em ${DAYS[sel]}</p>
+        <p class="sched-empty-sub">Importe seu cronograma ou adicione manualmente</p>
+        <button class="sched-empty-btn" onclick="openAddClass()">+ Adicionar aula</button>
+      </div>`;
+    return;
+  }
+
+  // Linha do tempo: separa por bloco de manhã/tarde/noite
+  const blocks = [
+    { label: 'Manhã',  icon: '🌅', range: ['00:00','12:00'], classes: [] },
+    { label: 'Tarde',  icon: '☀️',  range: ['12:00','18:00'], classes: [] },
+    { label: 'Noite',  icon: '🌙', range: ['18:00','23:59'], classes: [] },
+  ];
+
+  dayClasses.forEach(cls => {
+    if (cls.start < '12:00')      blocks[0].classes.push(cls);
+    else if (cls.start < '18:00') blocks[1].classes.push(cls);
+    else                          blocks[2].classes.push(cls);
+  });
+
+  el.innerHTML = blocks
+    .filter(b => b.classes.length > 0)
+    .map(b => `
+      <div class="sched-block">
+        <div class="sched-block-header">
+          <span class="sched-block-icon">${b.icon}</span>
+          <span class="sched-block-label">${b.label}</span>
+          <span class="sched-block-count">${b.classes.length} aula${b.classes.length > 1 ? 's' : ''}</span>
+        </div>
+        <div class="sched-block-list">
+          ${b.classes.map(cls => renderClassCard(cls)).join('')}
+        </div>
+      </div>
+    `).join('');
 }
 
 function renderClassCard(cls) {
+  // Calcula duração em minutos
+  const [sh, sm] = cls.start.split(':').map(Number);
+  const [eh, em] = cls.end.split(':').map(Number);
+  const dur = (eh * 60 + em) - (sh * 60 + sm);
+  const durText = dur >= 60
+    ? `${Math.floor(dur/60)}h${dur%60 > 0 ? (dur%60)+'min' : ''}`
+    : `${dur}min`;
+
+  // Verifica se a aula está acontecendo agora
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const isNow  = STATE.selectedDay === now.getDay()
+    && nowMin >= sh * 60 + sm
+    && nowMin <  eh * 60 + em;
+
+  const progress = isNow
+    ? Math.round(((nowMin - (sh*60+sm)) / dur) * 100)
+    : null;
+
   return `
-    <div class="class-card fade-in">
-      <div class="class-color-bar" style="background:${cls.subjectColor}"></div>
-      <div class="class-info">
-        <div class="class-name">${cls.subjectName}</div>
-        <div class="class-time">${cls.start} – ${cls.end}${cls.room ? ' · ' + cls.room : ''}</div>
+    <div class="sched-card fade-in ${isNow ? 'sched-card--live' : ''}">
+      <div class="sched-card-accent" style="background:${cls.subjectColor}"></div>
+      <div class="sched-card-body">
+        <div class="sched-card-top">
+          <div class="sched-card-name">${cls.subjectName}</div>
+          ${isNow ? '<span class="sched-live-badge">AO VIVO</span>' : ''}
+        </div>
+        <div class="sched-card-meta">
+          <span class="sched-meta-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            ${cls.start} – ${cls.end}
+          </span>
+          <span class="sched-meta-item sched-meta-dur">
+            ${durText}
+          </span>
+          ${cls.room ? `
+          <span class="sched-meta-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            ${cls.room}
+          </span>` : ''}
+        </div>
+        ${isNow && progress !== null ? `
+        <div class="sched-progress-bar">
+          <div class="sched-progress-fill" style="width:${progress}%;background:${cls.subjectColor}"></div>
+        </div>` : ''}
       </div>
-      <div class="class-actions">
-        <button class="icon-btn" onclick="deleteClass('${cls.id}')" title="Remover">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
-        </button>
-      </div>
+      <button class="sched-delete-btn" onclick="deleteClass('${cls.id}')" title="Remover">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+      </button>
     </div>`;
 }
 
