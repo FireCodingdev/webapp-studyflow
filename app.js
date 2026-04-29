@@ -9,6 +9,8 @@ import {
   loadFromFirestore,
 } from './firebase.js';
 
+import { initIA } from './ia.js';
+
 // ===== STATE =====
 const STATE = {
   subjects: [],
@@ -310,6 +312,21 @@ function showMainApp() {
   if (!STATE.isOnline) {
     document.getElementById('offline-banner').style.display = 'block';
   }
+
+  // Inicializa o módulo de IA (importar cronograma por foto)
+  initIA(STATE, {
+    save,
+    renderSidebar,
+    renderSchedule,
+    renderDashboard,
+    renderTasks,
+    showToast,
+    openModal: window.openModal,
+    closeModal: window.closeModal,
+    navigateTo: window.navigateTo,
+    COLORS,
+    DAYS,
+  });
 }
 
 // ===== AUTH HANDLERS =====

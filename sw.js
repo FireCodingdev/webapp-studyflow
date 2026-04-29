@@ -5,6 +5,7 @@ const STATIC_ASSETS = [
   '/index.html',
   '/styles.css',
   '/app.js',
+  '/ia.js',  
   '/firebase.js',
   '/manifest.json',
 ];
