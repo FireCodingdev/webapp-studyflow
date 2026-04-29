@@ -789,18 +789,74 @@ function renderDashboard() {
 
 // ===== RENDER SCHEDULE =====
 function initDayButtons() {
-  document.querySelectorAll('.day-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      STATE.selectedDay = parseInt(btn.dataset.day);
-      renderSchedule();
-    });
-  });
-  const today = new Date().getDay();
-  document.querySelector(`[data-day="${today}"]`)?.classList.add('active');
-  STATE.selectedDay = today;
+  renderCalendar();
 }
+ 
+function renderCalendar() {
+  const container = document.getElementById('schedule-calendar');
+  if (!container) return;
+ 
+  const today     = new Date();
+  const todayDay  = today.getDay();       // 0=Dom...6=Sáb
+  const todayDate = today.getDate();
+  const todayMonth= today.getMonth();
+  const todayYear = today.getFullYear();
+ 
+  // Semana atual: Sunday→Saturday
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - todayDay);
+ 
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(startOfWeek);
+    d.setDate(startOfWeek.getDate() + i);
+    return d;
+  });
+ 
+  const DAY_LABELS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+ 
+  // Mês/ano exibido no header (se a semana cruza meses, mostra os dois)
+  const months = [...new Set(weekDays.map(d => d.getMonth()))];
+  const monthLabel = months.map(m => MONTH_NAMES[m]).join(' – ') + ' ' + weekDays[0].getFullYear();
+ 
+  // Conta aulas por dia da semana (0–6)
+  const countByDay = Array(7).fill(0);
+  STATE.classes.forEach(c => { if (c.day >= 0 && c.day <= 6) countByDay[c.day]++; });
+ 
+  const sel = STATE.selectedDay;
+ 
+  container.innerHTML = `
+    <div class="cal-header">
+      <span class="cal-month-label">${monthLabel}</span>
+    </div>
+    <div class="cal-grid">
+      ${weekDays.map((d, i) => {
+        const isToday   = d.getDate() === todayDate && d.getMonth() === todayMonth && d.getFullYear() === todayYear;
+        const isSelected = i === sel;
+        const count     = countByDay[i];
+        const isOtherMonth = d.getMonth() !== todayMonth;
+ 
+        return `
+          <button
+            class="cal-day ${isSelected ? 'cal-day--selected' : ''} ${isToday ? 'cal-day--today' : ''} ${isOtherMonth ? 'cal-day--other' : ''}"
+            data-day="${i}"
+            onclick="selectCalDay(${i})"
+          >
+            <span class="cal-day-name">${DAY_LABELS[i]}</span>
+            <span class="cal-day-num">${d.getDate()}</span>
+            ${count > 0 ? `<span class="cal-day-dot" style="opacity:${isSelected ? 1 : 0.6}"></span>` : '<span class="cal-day-dot cal-day-dot--empty"></span>'}
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+ 
+window.selectCalDay = function(dayIndex) {
+  STATE.selectedDay = dayIndex;
+  renderCalendar();
+  renderSchedule();
+};
 
 function renderSchedule() {
   const el = document.getElementById('schedule-day-classes');
