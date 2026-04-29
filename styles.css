@@ -1038,146 +1038,279 @@ a { color: inherit; text-decoration: none; }
   border-color: var(--text3);
 }
 /* ==========================================================================
-   CALENDÁRIO SEMANAL — substitui o days-scroll antigo
-   Cole no final do styles.css (remove os patches anteriores de .day-btn/.days-scroll)
+   CALENDÁRIO SEMANAL + CARDS DE AULA — PATCH
    ========================================================================== */
 
-/* ── Wrapper do calendário ── */
-#schedule-calendar {
+/* ── Esconde days-scroll original ── */
+.days-scroll { display: none !important; }
+
+/* ════════════════════════════
+   CALENDÁRIO SEMANAL
+   ════════════════════════════ */
+.cal-wrap {
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 18px;
-  padding: 14px 12px 10px;
+  padding: 14px 10px 10px;
   margin-bottom: 20px;
 }
-
-/* ── Header: mês/ano ── */
-.cal-header {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 12px;
-}
-.cal-month-label {
+.cal-month {
+  text-align: center;
   font-size: 11px;
   font-weight: 900;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text2);
+  margin-bottom: 12px;
 }
-
-/* ── Grid dos 7 dias ── */
 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  gap: 3px;
 }
-
-/* ── Célula de dia ── */
-.cal-day {
+.cal-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 8px 2px 6px;
+  gap: 4px;
+  padding: 7px 2px 6px;
   border-radius: 12px;
   border: 1.5px solid transparent;
   background: transparent;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, transform 0.12s;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
   -webkit-tap-highlight-color: transparent;
 }
-.cal-day:hover {
-  background: var(--bg3);
-}
-.cal-day:active {
-  transform: scale(0.94);
-}
+.cal-cell:active { transform: scale(0.92); }
+.cal-cell:hover:not(.is-selected) { background: var(--bg3); }
 
-/* Nome do dia (Dom, Seg...) */
-.cal-day-name {
+.cal-dow {
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text3);
-  transition: color 0.15s;
 }
-
-/* Número do dia */
-.cal-day-num {
+.cal-num {
   font-size: 17px;
   font-weight: 700;
   color: var(--text2);
   line-height: 1;
-  transition: color 0.15s;
-}
-
-/* Dot indicador de aulas */
-.cal-day-dot {
-  width: 5px;
-  height: 5px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
-  background: var(--accent);
-  transition: opacity 0.15s, background 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
-.cal-day-dot--empty {
+.cal-pip {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
   background: transparent;
 }
-
-/* ── Estado: dia de outro mês ── */
-.cal-day--other .cal-day-num {
-  color: var(--text3);
-  opacity: 0.5;
+.cal-pip.has-classes {
+  background: var(--accent);
+  opacity: 0.7;
 }
 
-/* ── Estado: HOJE (sem seleção) ── */
-.cal-day--today .cal-day-name {
-  color: var(--accent);
-}
-.cal-day--today .cal-day-num {
-  color: var(--accent);
-}
+/* Hoje */
+.cal-cell.is-today .cal-dow { color: var(--accent); }
+.cal-cell.is-today .cal-num { color: var(--accent); }
 
-/* ── Estado: SELECIONADO ── */
-.cal-day--selected {
+/* Selecionado */
+.cal-cell.is-selected {
   background: var(--accent-soft);
-  border-color: rgba(108, 99, 255, 0.35);
+  border-color: rgba(108,99,255,0.3);
 }
-.cal-day--selected .cal-day-name {
-  color: var(--accent);
-}
-.cal-day--selected .cal-day-num {
+.cal-cell.is-selected .cal-dow { color: var(--accent); }
+.cal-cell.is-selected .cal-num {
+  background: var(--accent);
   color: #fff;
 }
-.cal-day--selected .cal-day-dot {
+.cal-cell.is-selected .cal-pip.has-classes {
   background: #fff;
   opacity: 1;
 }
 
-/* ── Hoje + selecionado: realce especial ── */
-.cal-day--today.cal-day--selected .cal-day-num {
+/* Hoje selecionado */
+.cal-cell.is-today.is-selected .cal-num {
   background: var(--accent);
   color: #fff;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(108,99,255,0.25);
+}
+
+/* ════════════════════════════
+   BLOCOS MANHÃ/TARDE/NOITE
+   ════════════════════════════ */
+.sched-block { margin-bottom: 22px; }
+.sched-block-hd {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+.sched-block-name {
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.sched-block-ct {
+  margin-left: auto;
+  color: var(--text3);
+  font-weight: 600;
+}
+
+/* ════════════════════════════
+   CARDS DE AULA
+   ════════════════════════════ */
+.cls-card {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.cls-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+}
+.cls-card--live {
+  border-color: rgba(108,99,255,0.3);
+  box-shadow: 0 0 0 1px rgba(108,99,255,0.12);
+}
+.cls-card-bar {
+  width: 4px;
+  flex-shrink: 0;
+}
+.cls-card-body {
+  flex: 1;
+  padding: 13px 12px 11px;
+  min-width: 0;
+}
+.cls-card-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+.cls-card-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cls-live-chip {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(46,213,115,0.15);
+  color: var(--success);
+  border: 1px solid rgba(46,213,115,0.3);
+  animation: live-blink 2s ease-in-out infinite;
+}
+@keyframes live-blink {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+.cls-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.cls-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text2);
+  font-weight: 500;
+}
+.cls-meta--dim {
+  color: var(--text3);
+  font-size: 11px;
+}
+.cls-progress {
+  height: 3px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 9px;
+}
+.cls-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  opacity: 0.85;
+  transition: width 30s linear;
+}
+.cls-del-btn {
+  flex-shrink: 0;
+  width: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  color: var(--text3);
+  border-left: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
 }
-
-/* ── Botão importar foto: sempre no topo ── */
-#ia-import-btn {
-  margin: 0 0 16px 0 !important;
-  order: unset;
+.cls-del-btn:hover {
+  color: var(--danger);
+  background: rgba(255,71,87,0.06);
 }
+.cls-del-btn svg { width: 15px; height: 15px; }
 
-/* ── Lista de aulas sem margin-top extra ── */
-#schedule-day-classes {
-  margin-top: 0 !important;
+/* ════════════════════════════
+   ESTADO VAZIO
+   ════════════════════════════ */
+.sched-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 24px;
+  text-align: center;
 }
-
-/* ── Remove estilos antigos do days-scroll se ainda existirem ── */
-.days-scroll { display: none !important; }
+.sched-empty-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  background: var(--bg3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sched-empty-icon svg { width: 24px; height: 24px; color: var(--text3); }
+.sched-empty-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.sched-empty-sub   { font-size: 13px; color: var(--text2); }
+.sched-empty-btn {
+  margin-top: 6px;
+  padding: 10px 22px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid rgba(108,99,255,0.25);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.sched-empty-btn:hover {
+  background: rgba(108,99,255,0.2);
+  border-color: rgba(108,99,255,0.4);
+}

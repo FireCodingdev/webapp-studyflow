@@ -791,69 +791,64 @@ function renderDashboard() {
 function initDayButtons() {
   renderCalendar();
 }
- 
+
 function renderCalendar() {
   const container = document.getElementById('schedule-calendar');
   if (!container) return;
- 
-  const today     = new Date();
-  const todayDay  = today.getDay();       // 0=Dom...6=Sáb
-  const todayDate = today.getDate();
-  const todayMonth= today.getMonth();
-  const todayYear = today.getFullYear();
- 
-  // Semana atual: Sunday→Saturday
+
+  const today      = new Date();
+  const todayDow   = today.getDay();
+  const todayDate  = today.getDate();
+  const todayMonth = today.getMonth();
+  const todayYear  = today.getFullYear();
+
   const startOfWeek = new Date(today);
-  startOfWeek.setDate(today.getDate() - todayDay);
- 
+  startOfWeek.setDate(today.getDate() - todayDow);
+
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(startOfWeek);
     d.setDate(startOfWeek.getDate() + i);
     return d;
   });
- 
-  const DAY_LABELS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
- 
-  // Mês/ano exibido no header (se a semana cruza meses, mostra os dois)
-  const months = [...new Set(weekDays.map(d => d.getMonth()))];
-  const monthLabel = months.map(m => MONTH_NAMES[m]).join(' – ') + ' ' + weekDays[0].getFullYear();
- 
-  // Conta aulas por dia da semana (0–6)
+
+  const DAY_SHORT   = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                       'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+  const months     = [...new Set(weekDays.map(d => d.getMonth()))];
+  const monthLabel = months.map(m => MONTH_NAMES[m]).join(' · ') + ' ' + weekDays[0].getFullYear();
+
   const countByDay = Array(7).fill(0);
   STATE.classes.forEach(c => { if (c.day >= 0 && c.day <= 6) countByDay[c.day]++; });
- 
+
   const sel = STATE.selectedDay;
- 
+
   container.innerHTML = `
-    <div class="cal-header">
-      <span class="cal-month-label">${monthLabel}</span>
-    </div>
-    <div class="cal-grid">
-      ${weekDays.map((d, i) => {
-        const isToday   = d.getDate() === todayDate && d.getMonth() === todayMonth && d.getFullYear() === todayYear;
-        const isSelected = i === sel;
-        const count     = countByDay[i];
-        const isOtherMonth = d.getMonth() !== todayMonth;
- 
-        return `
-          <button
-            class="cal-day ${isSelected ? 'cal-day--selected' : ''} ${isToday ? 'cal-day--today' : ''} ${isOtherMonth ? 'cal-day--other' : ''}"
-            data-day="${i}"
-            onclick="selectCalDay(${i})"
-          >
-            <span class="cal-day-name">${DAY_LABELS[i]}</span>
-            <span class="cal-day-num">${d.getDate()}</span>
-            ${count > 0 ? `<span class="cal-day-dot" style="opacity:${isSelected ? 1 : 0.6}"></span>` : '<span class="cal-day-dot cal-day-dot--empty"></span>'}
-          </button>
-        `;
-      }).join('')}
+    <div class="cal-wrap">
+      <div class="cal-month">${monthLabel}</div>
+      <div class="cal-grid">
+        ${weekDays.map((d, i) => {
+          const isToday = d.getDate() === todayDate && d.getMonth() === todayMonth && d.getFullYear() === todayYear;
+          const isSel   = i === sel;
+          const count   = countByDay[i];
+          return `
+            <button
+              class="cal-cell ${isSel ? 'is-selected' : ''} ${isToday ? 'is-today' : ''}"
+              onclick="selectCalDay(${i})"
+            >
+              <span class="cal-dow">${DAY_SHORT[i]}</span>
+              <span class="cal-num">${d.getDate()}</span>
+              <span class="cal-pip ${count > 0 ? 'has-classes' : ''}"></span>
+            </button>
+          `;
+        }).join('')}
+      </div>
     </div>
   `;
 }
- 
-window.selectCalDay = function(dayIndex) {
-  STATE.selectedDay = dayIndex;
+
+window.selectCalDay = function(i) {
+  STATE.selectedDay = i;
   renderCalendar();
   renderSchedule();
 };
@@ -862,22 +857,10 @@ function renderSchedule() {
   const el = document.getElementById('schedule-day-classes');
   if (!el) return;
 
-  const today = new Date().getDay();
-  const sel   = STATE.selectedDay;
-
-  // Conta aulas por dia para mostrar badges nos day-btns
-  document.querySelectorAll('.day-btn').forEach(btn => {
-    const d     = parseInt(btn.dataset.day);
-    const count = STATE.classes.filter(c => c.day === d).length;
-    btn.querySelector('.day-count')?.remove();
-    if (count > 0) {
-      const badge = document.createElement('span');
-      badge.className = 'day-count';
-      badge.textContent = count;
-      btn.appendChild(badge);
-    }
-    btn.classList.toggle('day-today', d === today);
-  });
+  const sel      = STATE.selectedDay;
+  const now      = new Date();
+  const nowMin   = now.getHours() * 60 + now.getMinutes();
+  const todayDow = now.getDay();
 
   const dayClasses = STATE.classes
     .filter(c => c.day === sel)
@@ -892,22 +875,20 @@ function renderSchedule() {
             <path d="M16 2v4M8 2v4M3 10h18"/>
           </svg>
         </div>
-        <p class="sched-empty-title">Nenhuma aula em ${DAYS[sel]}</p>
-        <p class="sched-empty-sub">Importe seu cronograma ou adicione manualmente</p>
+        <p class="sched-empty-title">Nenhuma aula</p>
+        <p class="sched-empty-sub">Importe uma foto ou adicione manualmente</p>
         <button class="sched-empty-btn" onclick="openAddClass()">+ Adicionar aula</button>
       </div>`;
     return;
   }
 
-  // Linha do tempo: separa por bloco de manhã/tarde/noite
   const blocks = [
-    { label: 'Manhã',  icon: '🌅', range: ['00:00','12:00'], classes: [] },
-    { label: 'Tarde',  icon: '☀️',  range: ['12:00','18:00'], classes: [] },
-    { label: 'Noite',  icon: '🌙', range: ['18:00','23:59'], classes: [] },
+    { label: 'Manhã', icon: '🌅', classes: [] },
+    { label: 'Tarde', icon: '☀️',  classes: [] },
+    { label: 'Noite', icon: '🌙', classes: [] },
   ];
-
   dayClasses.forEach(cls => {
-    if (cls.start < '12:00')      blocks[0].classes.push(cls);
+    if      (cls.start < '12:00') blocks[0].classes.push(cls);
     else if (cls.start < '18:00') blocks[1].classes.push(cls);
     else                          blocks[2].classes.push(cls);
   });
@@ -916,66 +897,55 @@ function renderSchedule() {
     .filter(b => b.classes.length > 0)
     .map(b => `
       <div class="sched-block">
-        <div class="sched-block-header">
-          <span class="sched-block-icon">${b.icon}</span>
-          <span class="sched-block-label">${b.label}</span>
-          <span class="sched-block-count">${b.classes.length} aula${b.classes.length > 1 ? 's' : ''}</span>
+        <div class="sched-block-hd">
+          <span>${b.icon}</span>
+          <span class="sched-block-name">${b.label}</span>
+          <span class="sched-block-ct">${b.classes.length} aula${b.classes.length > 1 ? 's' : ''}</span>
         </div>
-        <div class="sched-block-list">
-          ${b.classes.map(cls => renderClassCard(cls)).join('')}
-        </div>
+        ${b.classes.map(cls => renderClassCard(cls, nowMin, sel, todayDow)).join('')}
       </div>
     `).join('');
 }
 
-function renderClassCard(cls) {
-  // Calcula duração em minutos
+function renderClassCard(cls, nowMinArg, selArg, todayArg) {
+  const now      = new Date();
+  const nowMin   = nowMinArg  ?? (now.getHours() * 60 + now.getMinutes());
+  const sel      = selArg     ?? STATE.selectedDay;
+  const todayDow = todayArg   ?? now.getDay();
+
   const [sh, sm] = cls.start.split(':').map(Number);
   const [eh, em] = cls.end.split(':').map(Number);
-  const dur = (eh * 60 + em) - (sh * 60 + sm);
-  const durText = dur >= 60
-    ? `${Math.floor(dur/60)}h${dur%60 > 0 ? (dur%60)+'min' : ''}`
+  const startMin = sh * 60 + sm;
+  const endMin   = eh * 60 + em;
+  const dur      = endMin - startMin;
+  const durText  = dur >= 60
+    ? `${Math.floor(dur / 60)}h${dur % 60 > 0 ? (dur % 60) + 'min' : ''}`
     : `${dur}min`;
 
-  // Verifica se a aula está acontecendo agora
-  const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  const isNow  = STATE.selectedDay === now.getDay()
-    && nowMin >= sh * 60 + sm
-    && nowMin <  eh * 60 + em;
-
-  const progress = isNow
-    ? Math.round(((nowMin - (sh*60+sm)) / dur) * 100)
-    : null;
+  const isLive   = sel === todayDow && nowMin >= startMin && nowMin < endMin;
+  const progress = isLive ? Math.round(((nowMin - startMin) / dur) * 100) : null;
 
   return `
-    <div class="sched-card fade-in ${isNow ? 'sched-card--live' : ''}">
-      <div class="sched-card-accent" style="background:${cls.subjectColor}"></div>
-      <div class="sched-card-body">
-        <div class="sched-card-top">
-          <div class="sched-card-name">${cls.subjectName}</div>
-          ${isNow ? '<span class="sched-live-badge">AO VIVO</span>' : ''}
+    <div class="cls-card ${isLive ? 'cls-card--live' : ''}">
+      <div class="cls-card-bar" style="background:${cls.subjectColor}"></div>
+      <div class="cls-card-body">
+        <div class="cls-card-row">
+          <span class="cls-card-name">${cls.subjectName}</span>
+          ${isLive ? '<span class="cls-live-chip">AO VIVO</span>' : ''}
         </div>
-        <div class="sched-card-meta">
-          <span class="sched-meta-item">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        <div class="cls-card-meta">
+          <span class="cls-meta">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
             ${cls.start} – ${cls.end}
           </span>
-          <span class="sched-meta-item sched-meta-dur">
-            ${durText}
-          </span>
-          ${cls.room ? `
-          <span class="sched-meta-item">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-            ${cls.room}
-          </span>` : ''}
+          <span class="cls-meta cls-meta--dim">${durText}</span>
+          ${cls.room ? `<span class="cls-meta">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            ${cls.room}</span>` : ''}
         </div>
-        ${isNow && progress !== null ? `
-        <div class="sched-progress-bar">
-          <div class="sched-progress-fill" style="width:${progress}%;background:${cls.subjectColor}"></div>
-        </div>` : ''}
+        ${isLive ? `<div class="cls-progress"><div class="cls-progress-fill" style="width:${progress}%;background:${cls.subjectColor}"></div></div>` : ''}
       </div>
-      <button class="sched-delete-btn" onclick="deleteClass('${cls.id}')" title="Remover">
+      <button class="cls-del-btn" onclick="deleteClass('${cls.id}')" title="Remover">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
       </button>
     </div>`;
