@@ -22,7 +22,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ─── CONFIGURAÇÃO ────────────────────────────────────────────────────────────
-const CLASSROOM_CLIENT_ID = '92968084905-1ete8rjlfs6e3uo3pj4h351bdm8ak947.apps.googleusercontent.com';
+const CLASSROOM_CLIENT_ID = 'SEU_CLIENT_ID_AQUI.apps.googleusercontent.com';
 const CLASSROOM_SCOPES = [
   'https://www.googleapis.com/auth/classroom.courses.readonly',
   'https://www.googleapis.com/auth/classroom.coursework.me.readonly',
@@ -260,9 +260,9 @@ function encontrarMateria(nomeTurma) {
 function injetarBotaoClassroom() {
   if (document.getElementById('classroom-btn-wrapper')) return;
 
-  // Injeta logo abaixo do bloco de MATÉRIAS na sidebar
-  const sidebarFooter = document.querySelector('.sidebar-footer');
-  if (!sidebarFooter) return;
+  // Injeta dentro do footer, antes do botão Sair
+  const logoutBtn = document.querySelector('.sidebar-footer .logout-btn');
+  if (!logoutBtn) return;
 
   const wrapper = document.createElement('div');
   wrapper.id = 'classroom-btn-wrapper';
@@ -275,7 +275,7 @@ function injetarBotaoClassroom() {
       <span id="classroom-btn-label">Conectar Classroom</span>
     </button>
   `;
-  sidebarFooter.insertAdjacentElement('beforebegin', wrapper);
+  logoutBtn.insertAdjacentElement('beforebegin', wrapper);
 
   // Expõe globalmente para o onclick
   window._conectarClassroom = () => {
@@ -325,7 +325,8 @@ function injetarEstilosClassroom() {
   style.id = 'classroom-styles';
   style.textContent = `
     .classroom-btn-wrapper {
-      padding: 0 12px 10px;
+      padding: 0 0 10px;
+      width: 100%;
     }
     .classroom-btn {
       display: flex;
