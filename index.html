@@ -22,6 +22,20 @@
 </head>
 <body>
 
+  <div id="install-banner" class="install-banner" style="display:none;">
+    <div class="install-banner-content">
+      <img src="/icons/icon-192.png" alt="StudyFlow" class="install-banner-icon">
+      <div class="install-banner-text">
+        <strong>Instalar StudyFlow</strong>
+        <span>Acesse mais rápido, direto da tela inicial</span>
+      </div>
+    </div>
+    <div class="install-banner-actions">
+      <button id="btn-install" class="install-btn-primary" onclick="triggerInstall()">Instalar</button>
+      <button class="install-btn-dismiss" onclick="dismissInstallBanner()">Agora não</button>
+    </div>
+  </div>
+
   <div id="splash" class="splash-screen">
     <div class="spinner"></div>
     <h2>StudyFlow</h2>
