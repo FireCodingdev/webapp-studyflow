@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Conectando...</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: #1a1a2e;
+      font-family: sans-serif;
+      color: #fff;
+      text-align: center;
+    }
+    p { opacity: 0.7; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div>
+    <p>Conectando ao Google Classroom...</p>
+    <p>Esta janela fechará automaticamente.</p>
+  </div>
+  <script>
+    // Extrai parâmetros do hash da URL (fluxo OAuth implícito)
+    // Ex: #access_token=xxx&token_type=Bearer&expires_in=3599&state=uid
+    const params = new URLSearchParams(location.hash.slice(1));
+    const access_token = params.get('access_token');
+    const expires_in   = params.get('expires_in');
+
+    if (access_token) {
+      // Envia token para a janela pai (o app StudyFlow)
+      window.opener?.postMessage(
+        { type: 'classroom-token', access_token, expires_in },
+        location.origin
+      );
+    }
+
+    // Fecha o popup após 1s (dá tempo para a mensagem ser recebida)
+    setTimeout(() => window.close(), 1000);
+  </script>
+</body>
+</html>

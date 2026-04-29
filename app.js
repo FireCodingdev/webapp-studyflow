@@ -10,6 +10,7 @@ import {
 } from './firebase.js';
 
 import { initIA } from './ia.js';
+import { initClassroom } from './classroom.js';
 
 // ===== STATE =====
 const STATE = {
@@ -327,6 +328,9 @@ function showMainApp() {
     COLORS,
     DAYS,
   });
+
+  // Integração com Google Classroom (polling ao abrir o app)
+  initClassroom(STATE, { save, renderTasks, renderDashboard, showToast });
 }
 
 // ===== AUTH HANDLERS =====
