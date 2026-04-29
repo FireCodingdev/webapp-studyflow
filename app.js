@@ -173,12 +173,13 @@ window.addEventListener('offline', () => {
 
 // ===== AUTH INIT =====
 window.addEventListener('DOMContentLoaded', () => {
-  let authResolved = false;
+  // Timeout de segurança apenas para o estado inicial (antes do primeiro disparo)
+  // Não bloqueia disparos futuros (login após timeout)
+  let initialCheckDone = false;
 
-  // Timeout de segurança: se o Firebase demorar mais de 8s, mostra a tela de login
   const authTimeout = setTimeout(() => {
-    if (!authResolved) {
-      authResolved = true;
+    if (!initialCheckDone) {
+      initialCheckDone = true;
       console.warn('Firebase auth timeout — exibindo tela de login');
       STATE.currentUser = null;
       showAuthScreen();
@@ -186,9 +187,11 @@ window.addEventListener('DOMContentLoaded', () => {
   }, 8000);
 
   onAuthStateChanged(auth, async (user) => {
-    if (authResolved) return;
-    authResolved = true;
-    clearTimeout(authTimeout);
+    // Cancela o timeout na primeira resposta do Firebase
+    if (!initialCheckDone) {
+      initialCheckDone = true;
+      clearTimeout(authTimeout);
+    }
 
     if (user) {
       STATE.currentUser = user;
@@ -212,20 +215,28 @@ async function initAppForUser(user) {
   // Carrega os dados locais primeiro para resposta instantânea
   loadLocal();
 
-  // Tenta puxar do Firestore para atualizar (caso logue em outro dispositivo ou aba anônima)
+  // Tenta puxar do Firestore para atualizar (com timeout de 10s para não travar)
   if (STATE.isOnline) {
     showSyncIndicator(true);
     updateSyncStatus('syncing');
-    const cloudData = await loadFromFirestore(user.uid);
-    if (cloudData) {
-      STATE.subjects = cloudData.subjects || [];
-      STATE.classes = cloudData.classes || [];
-      STATE.tasks = cloudData.tasks || [];
-      STATE.flashcards = cloudData.flashcards || [];
-      saveLocal(); // Atualiza o cache local
+    try {
+      const cloudData = await Promise.race([
+        loadFromFirestore(user.uid),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore timeout')), 10000))
+      ]);
+      if (cloudData) {
+        STATE.subjects = cloudData.subjects || [];
+        STATE.classes = cloudData.classes || [];
+        STATE.tasks = cloudData.tasks || [];
+        STATE.flashcards = cloudData.flashcards || [];
+        saveLocal();
+      }
+    } catch (err) {
+      console.warn('Falha ao carregar dados da nuvem:', err.message);
+      updateSyncStatus('error');
     }
     showSyncIndicator(false);
-    updateSyncStatus('synced');
+    if (STATE.isOnline) updateSyncStatus('synced');
   } else {
     updateSyncStatus('local');
   }
