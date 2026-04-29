@@ -169,14 +169,27 @@ export function abrirModalImportarCronograma(STATE, hooks) {
       <p class="ia-upload-sub">A IA vai ler as matérias, dias e horários automaticamente</p>
       <input
         type="file"
-        id="ia-file-input"
+        id="ia-file-input-camera"
         accept="image/*"
         capture="environment"
         style="display:none"
       />
-      <button class="btn-primary ia-upload-btn" onclick="document.getElementById('ia-file-input').click()">
-        Escolher foto / câmera
-      </button>
+      <input
+        type="file"
+        id="ia-file-input-gallery"
+        accept="image/*"
+        style="display:none"
+      />
+      <div class="ia-upload-btns">
+        <button class="btn-primary ia-upload-btn" onclick="document.getElementById('ia-file-input-camera').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          Tirar foto
+        </button>
+        <button class="btn-secondary ia-upload-btn ia-upload-btn-gallery" onclick="document.getElementById('ia-file-input-gallery').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Escolher da galeria
+        </button>
+      </div>
     </div>
 
     <div id="ia-preview-area" style="display:none">
@@ -188,14 +201,17 @@ export function abrirModalImportarCronograma(STATE, hooks) {
 
   // Listener de seleção de arquivo
   setTimeout(() => {
-    const input   = document.getElementById('ia-file-input');
-    const dropZone = document.getElementById('ia-drop-zone');
+    const inputCamera  = document.getElementById('ia-file-input-camera');
+    const inputGallery = document.getElementById('ia-file-input-gallery');
+    const dropZone     = document.getElementById('ia-drop-zone');
 
-    if (!input) return;
+    if (!inputCamera && !inputGallery) return;
 
-    input.addEventListener('change', () => {
-      const file = input.files?.[0];
-      if (file) processarArquivo(file, STATE, hooks);
+    [inputCamera, inputGallery].forEach(input => {
+      input?.addEventListener('change', () => {
+        const file = input.files?.[0];
+        if (file) processarArquivo(file, STATE, hooks);
+      });
     });
 
     // Suporte a drag & drop no desktop
@@ -340,7 +356,7 @@ export function initIA(STATE, hooks) {
     // Evita duplicatas
     if (document.getElementById('ia-import-btn')) return;
 
-    const scheduleHeader = document.querySelector('#page-schedule .days-scroll');
+    const scheduleHeader = document.getElementById('schedule-calendar');
     if (!scheduleHeader) return;
 
     const btn = document.createElement('button');
@@ -427,7 +443,33 @@ export function initIA(STATE, hooks) {
       color: var(--text2);
       margin: 0;
     }
-    .ia-upload-btn { margin-top: 6px; padding: 12px 24px; }
+    .ia-upload-btns {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+      width: 100%;
+    }
+    .ia-upload-btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 16px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .ia-upload-btn-gallery {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: var(--text1, #fff);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .ia-upload-btn-gallery:hover {
+      background: rgba(255,255,255,0.12);
+    }
 
     /* Preview da imagem */
     .ia-preview-img {
