@@ -112,9 +112,6 @@ Regras:
 
     const data    = await apiResp.json();
     const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const cleaned = rawText
       .replace(/```json\n?/gi, '')
       .replace(/```\n?/gi, '')
