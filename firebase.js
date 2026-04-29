@@ -38,17 +38,17 @@ export { auth, db };
 
 export async function syncToFirestore(userId, data) {
   try {
-    // Incluindo flashcards na sincronização para evitar perda de dados
     await setDoc(doc(db, 'users', userId), {
       subjects: data.subjects || [],
       classes: data.classes || [],
       tasks: data.tasks || [],
       flashcards: data.flashcards || [],
       updatedAt: new Date().toISOString(),
-    });
+    }, { merge: true });
     return true;
   } catch (err) {
-    console.error('Erro ao sincronizar:', err);
+    // Loga o código de erro para diagnóstico (ex: permission-denied, unavailable)
+    console.error('Erro ao sincronizar:', err.code, err.message);
     return false;
   }
 }

@@ -912,6 +912,41 @@ a { color: inherit; text-decoration: none; }
   animation: spin 1s linear infinite;
 }
 /* ==========================================================================
+   COLOR PICKER (MATÉRIAS)
+   ========================================================================== */
+.color-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.color-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 3px solid transparent;
+  outline: 2px solid transparent;
+  transition: transform 0.15s ease, outline 0.15s ease, border-color 0.15s ease;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.color-swatch.selected {
+  border-color: #fff;
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  transform: scale(1.18);
+  box-shadow: 0 0 0 4px rgba(108, 99, 255, 0.35);
+}
+
+/* ==========================================================================
    INSTALL BANNER (PWA)
    ========================================================================== */
 .install-banner {

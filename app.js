@@ -123,6 +123,13 @@ async function syncData() {
   
   showSyncIndicator(true);
   updateSyncStatus('syncing');
+
+  // Garante que o token de autenticação está fresco antes de sincronizar
+  try {
+    await STATE.currentUser.getIdToken(true);
+  } catch (tokenErr) {
+    console.warn('Não foi possível renovar token:', tokenErr.message);
+  }
   
   const ok = await syncToFirestore(STATE.currentUser.uid, {
     subjects: STATE.subjects,
@@ -139,6 +146,13 @@ async function syncData() {
   } else {
     STATE.pendingSync = true;
     updateSyncStatus('error');
+    // Tenta sincronizar novamente após 5 segundos
+    setTimeout(async () => {
+      if (STATE.pendingSync && STATE.isOnline && STATE.currentUser) {
+        console.log('Tentando sincronizar novamente...');
+        await syncData();
+      }
+    }, 5000);
   }
   return ok;
 }
@@ -464,7 +478,7 @@ window.filterBySubject = function(id) {
 // ===== ADD SUBJECT =====
 window.openAddSubject = function() {
   const colors = COLORS.map((c, i) => `
-    <div class="color-swatch ${i === 0 ? 'selected' : ''}" style="background:${c}" data-color="${c}" onclick="selectColor(this)"></div>
+    <div class="color-swatch ${i === 0 ? 'selected' : ''}" style="background:${c}" data-color="${c}"></div>
   `).join('');
   openModal('Nova Matéria', `
     <div class="form-group">
@@ -473,7 +487,7 @@ window.openAddSubject = function() {
     </div>
     <div class="form-group">
       <label class="form-label">Cor</label>
-      <div class="color-picker">${colors}</div>
+      <div class="color-picker" id="color-picker-container">${colors}</div>
     </div>
     <div class="form-group">
       <label class="form-label">Links Úteis (um por linha)</label>
@@ -482,9 +496,25 @@ window.openAddSubject = function() {
     </div>
     <button class="btn-primary" onclick="saveSubject()">Adicionar Matéria</button>
   `);
+
+  // Event delegation: escuta cliques no container, não nos swatches individualmente
+  // Isso evita problemas de bubbling com o overlay do modal
+  setTimeout(() => {
+    const container = document.getElementById('color-picker-container');
+    if (container) {
+      container.addEventListener('click', function(e) {
+        const swatch = e.target.closest('.color-swatch');
+        if (!swatch) return;
+        e.stopPropagation();
+        container.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+        swatch.classList.add('selected');
+      });
+    }
+  }, 0);
 };
 
 window.selectColor = function(el) {
+  // mantida por compatibilidade — a lógica real agora usa event delegation em openAddSubject
   document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
   el.classList.add('selected');
 };
