@@ -1,5 +1,5 @@
 // ===== SERVICE WORKER - StudyFlow =====
-const CACHE_NAME = 'studyflow-v5';
+const CACHE_NAME = 'studyflow-v6';
 const STATIC_ASSETS = [
   '/index.html',
   '/styles.css',
