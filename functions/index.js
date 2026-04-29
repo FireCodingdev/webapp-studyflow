@@ -98,7 +98,7 @@ Regras:
     };
 
     const apiKey  = geminiKey.value();
-    const apiResp = await fetch(`${GEMINI_URL}:generateContent?key=${apiKey}`, {
+    const apiResp = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(geminiBody),
