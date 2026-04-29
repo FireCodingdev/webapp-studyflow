@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>StudyFlow</title>
+  
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#6c63ff" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="StudyFlow" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="icon" type="image/png" href="/icons/icon-192.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <div id="splash" class="splash-screen">
+    <div class="spinner"></div>
+    <h2>StudyFlow</h2>
+  </div>
+
+  <div id="auth-screen" style="display: none;">
+    <div class="auth-container">
+      <div class="auth-header">
+        <h1>StudyFlow</h1>
+        <p>Organize seus estudos de forma inteligente.</p>
+      </div>
+
+      <div class="auth-tabs">
+        <button id="tab-login" class="active" onclick="showAuthTab('login')">Entrar</button>
+        <button id="tab-register" onclick="showAuthTab('register')">Cadastrar</button>
+      </div>
+
+      <div id="form-login" class="auth-form">
+        <div class="form-group">
+          <label>E-mail</label>
+          <input type="email" id="login-email" class="form-input" placeholder="seu@email.com">
+        </div>
+        <div class="form-group">
+          <label>Senha</label>
+          <input type="password" id="login-password" class="form-input" placeholder="******">
+        </div>
+        <p id="auth-error-login" class="auth-error" style="display: none;"></p>
+        <button id="btn-login" class="btn-primary" onclick="handleLogin()">Entrar</button>
+      </div>
+
+      <div id="form-register" class="auth-form" style="display: none;">
+        <div class="form-group">
+          <label>Nome</label>
+          <input type="text" id="reg-name" class="form-input" placeholder="Como quer ser chamado?">
+        </div>
+        <div class="form-group">
+          <label>E-mail</label>
+          <input type="email" id="reg-email" class="form-input" placeholder="seu@email.com">
+        </div>
+        <div class="form-group">
+          <label>Senha</label>
+          <input type="password" id="reg-password" class="form-input" placeholder="No mínimo 6 caracteres">
+        </div>
+        <p id="auth-error-register" class="auth-error" style="display: none;"></p>
+        <button id="btn-register" class="btn-primary" onclick="handleRegister()">Criar conta</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="main-app" style="display: none;">
+    
+    <div id="offline-banner" class="offline-banner">
+      Você está offline. As alterações serão salvas localmente.
+    </div>
+
+    <div id="sidebar-overlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
+    <div id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <div class="user-profile">
+          <div id="sidebar-avatar" class="avatar">US</div>
+          <div class="user-info">
+            <span id="sidebar-name" class="user-name">Usuário</span>
+          </div>
+        </div>
+        <button class="icon-btn close-sidebar" onclick="closeSidebar()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="sidebar-nav">
+        <button class="nav-item active" data-page="dashboard" onclick="navigateTo('dashboard')">
+          <span class="nav-icon">📊</span> Dashboard
+        </button>
+        <button class="nav-item" data-page="schedule" onclick="navigateTo('schedule')">
+          <span class="nav-icon">📅</span> Cronograma
+        </button>
+        <button class="nav-item" data-page="tasks" onclick="navigateTo('tasks')">
+          <span class="nav-icon">📝</span> Atividades
+        </button>
+        <button class="nav-item" data-page="flashcards" onclick="navigateTo('flashcards')">
+          <span class="nav-icon">🗂️</span> Flashcards
+        </button>
+        <button class="nav-item" data-page="links" onclick="navigateTo('links')">
+          <span class="nav-icon">🔗</span> Materiais
+        </button>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-title">
+          <span>MATÉRIAS</span>
+          <button class="icon-btn-small" onclick="openAddSubject()">+</button>
+        </div>
+        <div id="subjects-list" class="subjects-list"></div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="sync-status-container">
+          <svg id="sync-indicator" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;margin-right:6px;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.32-9.28l5.48 5.48"/></svg>
+          <span id="sidebar-sync-status">Sincronizado</span>
+        </div>
+        <button class="logout-btn" onclick="handleLogout()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          Sair
+        </button>
+      </div>
+    </div>
+
+    <main class="main-content">
+      <header class="topbar">
+        <button class="icon-btn menu-btn" onclick="openSidebar()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+        </button>
+        <h2 id="page-title" class="page-title">Dashboard</h2>
+        <button class="icon-btn bell-btn" onclick="requestNotificationPermission()" title="Ativar Notificações">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
+        </button>
+      </header>
+
+      <div id="page-dashboard" class="page active">
+        <div class="page-content">
+          <h1 id="greeting-text" class="greeting">Olá!</h1>
+          
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-value" id="stat-classes">0</div>
+              <div class="stat-label">Aulas Hoje</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-tasks">0</div>
+              <div class="stat-label">Tarefas Pendentes</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-exams">0</div>
+              <div class="stat-label">Provas Próximas</div>
+            </div>
+          </div>
+
+          <div class="dashboard-widgets">
+            <div class="widget">
+              <h3>Progresso Geral</h3>
+              <div id="dashboard-pie"></div>
+            </div>
+            <div class="widget">
+              <h3>Próximo Grande Evento</h3>
+              <div id="dashboard-next-exam"></div>
+            </div>
+          </div>
+
+          <div class="section-block">
+            <div class="section-header">
+              <h3>Aulas de Hoje</h3>
+              <button class="text-btn" onclick="navigateTo('schedule')">Ver todas</button>
+            </div>
+            <div id="today-classes" class="list-container"></div>
+          </div>
+
+          <div class="section-block">
+            <div class="section-header">
+              <h3>Próximas Atividades</h3>
+              <button class="text-btn" onclick="navigateTo('tasks')">Ver todas</button>
+            </div>
+            <div id="upcoming-tasks" class="list-container"></div>
+          </div>
+        </div>
+        <button class="fab" onclick="openAddTask()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+
+      <div id="page-schedule" class="page">
+        <div class="page-content">
+          <div class="days-scroll">
+            <button class="day-btn" data-day="0">Dom</button>
+            <button class="day-btn" data-day="1">Seg</button>
+            <button class="day-btn" data-day="2">Ter</button>
+            <button class="day-btn" data-day="3">Qua</button>
+            <button class="day-btn" data-day="4">Qui</button>
+            <button class="day-btn" data-day="5">Sex</button>
+            <button class="day-btn" data-day="6">Sáb</button>
+          </div>
+          <div id="schedule-day-classes" class="list-container mt-4"></div>
+        </div>
+        <button class="fab" onclick="openAddClass()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+
+      <div id="page-tasks" class="page">
+        <div class="page-content">
+          <div class="filter-tabs">
+            <button class="filter-tab active" data-filter="all" onclick="filterTasks('all')">Todas</button>
+            <button class="filter-tab" data-filter="pending" onclick="filterTasks('pending')">Pendentes</button>
+            <button class="filter-tab" data-filter="exam" onclick="filterTasks('exam')">Provas</button>
+            <button class="filter-tab" data-filter="done" onclick="filterTasks('done')">Concluídas</button>
+          </div>
+          <div id="tasks-list" class="list-container mt-4"></div>
+        </div>
+        <button class="fab" onclick="openAddTask()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+
+      <div id="page-flashcards" class="page">
+        <div class="page-content">
+          <div class="fc-header-info">
+            <span id="fc-due-count" class="badge">0 para revisar hoje</span>
+          </div>
+          <div class="filter-tabs">
+            <button class="fc-filter-tab filter-tab active" data-fcfilter="all" onclick="filterFlashcards('all')">Todos</button>
+            <button class="fc-filter-tab filter-tab" data-fcfilter="due" onclick="filterFlashcards('due')">Para revisar</button>
+          </div>
+          <div id="flashcards-list" class="flashcards-list mt-4"></div>
+        </div>
+        <button class="fab" onclick="openAddFlashcard()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+
+      <div id="page-links" class="page">
+        <div class="page-content">
+          <p class="links-subtitle">Acesse rapidamente os materiais de cada matéria.</p>
+          <div id="links-list" class="links-list"></div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <div id="modal-overlay" class="modal-overlay" onclick="closeModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3 id="modal-title">Modal</h3>
+        <button class="icon-btn-small" onclick="closeModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div id="modal-body" class="modal-body">
+        </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">Mensagem salva!</div>
+
+  <script type="module" src="app.js"></script>
+
+</body>
+</html>
