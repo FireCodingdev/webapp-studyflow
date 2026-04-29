@@ -7,42 +7,15 @@
 //   initIA(STATE, { save, renderSidebar, renderSchedule, renderDashboard, renderTasks, showToast, COLORS, DAYS });
 
 // ─── CONFIG ─────────────────────────────────────────────────────────────────
-// Substitua pela sua chave da Google AI Studio:
-// https://aistudio.google.com/app/apikey
-const GEMINI_API_KEY = 'AIzaSyAtDFEFGyOx3-J8pvPtejzSRZNXxE_pKAg';
-const GEMINI_MODEL   = 'gemini-2.0-flash';
-const GEMINI_URL     = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+// A chave NÃO fica aqui. Ela está protegida na Firebase Cloud Function.
+// Troque pela URL da sua função após o deploy:
+//   firebase deploy --only functions
+//   A URL aparece no terminal: https://REGIÃO-PROJETO.cloudfunctions.net/geminiProxy
+const PROXY_URL = 'https://geminiproxy-xesxvi757a-uc.a.run.app';
 
-// ─── PROMPT DE EXTRAÇÃO ──────────────────────────────────────────────────────
-// Instrução exata que o Gemini receberá junto com a imagem.
-const SCHEDULE_PROMPT = `
-Você é um assistente especializado em ler cronogramas acadêmicos em imagens.
-Analise esta imagem de cronograma/grade horária e extraia TODAS as informações.
-
-Retorne APENAS um JSON válido (sem markdown, sem explicações) com este formato:
-{
-  "materias": [
-    { "nome": "Nome da Matéria", "professor": "Nome Opcional" }
-  ],
-  "aulas": [
-    {
-      "materia": "Nome exato igual ao campo nome em materias",
-      "dia": 0,
-      "inicio": "08:00",
-      "fim": "09:00",
-      "sala": "Sala opcional ou null"
-    }
-  ],
-  "observacoes": "Qualquer observação relevante encontrada na imagem, ou null"
-}
-
-Regras:
-- "dia" deve ser número: 0=Domingo, 1=Segunda, 2=Terça, 3=Quarta, 4=Quinta, 5=Sexta, 6=Sábado
-- "inicio" e "fim" no formato HH:MM (24h)
-- Se não conseguir ler alguma informação, use null
-- Se a imagem não for um cronograma acadêmico, retorne: {"erro": "Imagem não reconhecida como cronograma"}
-- Não invente informações que não estejam claramente visíveis na imagem
-`;
+// ─── PROMPT ──────────────────────────────────────────────────────────────────
+// O prompt de extração fica na Firebase Function (functions/index.js),
+// não aqui no cliente. Isso evita que alguém o manipule pelo browser.
 
 // ─── FUNÇÃO PRINCIPAL: ANALISAR IMAGEM ───────────────────────────────────────
 /**
@@ -51,51 +24,35 @@ Regras:
  */
 async function analisarImagemCronograma(imageFile) {
   // Converte imagem para base64
-  const base64 = await fileToBase64(imageFile);
-  const mimeType = imageFile.type || 'image/jpeg';
+  const base64    = await fileToBase64(imageFile);
+  const mimeType  = imageFile.type || 'image/jpeg';
 
-  const body = {
-    contents: [{
-      parts: [
-        { text: SCHEDULE_PROMPT },
-        {
-          inline_data: {
-            mime_type: mimeType,
-            data: base64,
-          }
-        }
-      ]
-    }],
-    generationConfig: {
-      temperature: 0.1,      // baixo para respostas mais determinísticas
-      maxOutputTokens: 2048,
-    }
-  };
+  // Pega o token de autenticação do usuário logado no Firebase
+  // Isso prova ao servidor que é um usuário válido do app
+  const { auth } = await import('./firebase.js');
+  const user = auth.currentUser;
+  if (!user) throw new Error('Você precisa estar logado para usar a IA.');
+  const idToken = await user.getIdToken();
 
-  const response = await fetch(GEMINI_URL, {
+  // Chama a Firebase Function (proxy seguro) — a chave nunca fica no cliente
+  const response = await fetch(PROXY_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${idToken}`,  // autenticação do usuário
+    },
+    body: JSON.stringify({ imageBase64: base64, mimeType }),
   });
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    const msg = err?.error?.message || `HTTP ${response.status}`;
-    throw new Error(`Erro na API Gemini: ${msg}`);
-  }
-
   const data = await response.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawText) throw new Error('Resposta vazia do Gemini');
 
-  // Remove possíveis blocos de markdown que o modelo às vezes inclui
-  const cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    throw new Error('IA retornou resposta em formato inesperado. Tente novamente.');
+  if (!response.ok) {
+    throw new Error(data?.error || `Erro no servidor: HTTP ${response.status}`);
   }
+
+  if (data.erro) throw new Error(data.erro);
+
+  return data;
 }
 
 // ─── CONVERTER FILE PARA BASE64 ───────────────────────────────────────────────
