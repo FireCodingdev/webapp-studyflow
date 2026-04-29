@@ -193,12 +193,20 @@ window.addEventListener('DOMContentLoaded', () => {
       clearTimeout(authTimeout);
     }
 
-    if (user) {
-      STATE.currentUser = user;
-      await initAppForUser(user);
-    } else {
+    try {
+      if (user) {
+        STATE.currentUser = user;
+        await initAppForUser(user);
+      } else {
+        STATE.currentUser = null;
+        showAuthScreen();
+      }
+    } catch (err) {
+      console.error('Falha ao inicializar após login:', err);
       STATE.currentUser = null;
       showAuthScreen();
+      const errEl = document.getElementById('auth-error-login');
+      if (errEl) showAuthError(errEl, 'Erro ao entrar. Recarregue a página e tente novamente.');
     }
   });
 });
@@ -248,6 +256,7 @@ function showAuthScreen() {
   document.getElementById('splash').classList.add('hide');
   document.getElementById('auth-screen').style.display = 'flex';
   document.getElementById('main-app').style.display = 'none';
+  resetAuthUi();
 }
 
 function showMainApp() {
@@ -269,6 +278,20 @@ function showMainApp() {
 }
 
 // ===== AUTH HANDLERS =====
+function resetAuthUi() {
+  const btnLogin = document.getElementById('btn-login');
+  if (btnLogin) {
+    btnLogin.disabled = false;
+    btnLogin.innerHTML = '<span>Entrar</span>';
+  }
+
+  const btnRegister = document.getElementById('btn-register');
+  if (btnRegister) {
+    btnRegister.disabled = false;
+    btnRegister.innerHTML = '<span>Criar conta</span>';
+  }
+}
+
 window.showAuthTab = function(tab) {
   document.getElementById('form-login').style.display = tab === 'login' ? 'block' : 'none';
   document.getElementById('form-register').style.display = tab === 'register' ? 'block' : 'none';
@@ -289,9 +312,15 @@ window.handleLogin = async function() {
   errEl.style.display = 'none';
 
   try {
-    await loginUser(email, password);
+    await Promise.race([
+      loginUser(email, password),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('AUTH_TIMEOUT')), 15000)),
+    ]);
   } catch (err) {
-    showAuthError(errEl, translateAuthError(err.code));
+    const msg = err?.message === 'AUTH_TIMEOUT'
+      ? 'Tempo esgotado ao entrar. Verifique sua conexão e tente novamente.'
+      : translateAuthError(err.code);
+    showAuthError(errEl, msg);
     btn.disabled = false;
     btn.innerHTML = '<span>Entrar</span>';
   }
@@ -312,9 +341,15 @@ window.handleRegister = async function() {
   errEl.style.display = 'none';
 
   try {
-    await registerUser(email, password, name);
+    await Promise.race([
+      registerUser(email, password, name),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('AUTH_TIMEOUT')), 20000)),
+    ]);
   } catch (err) {
-    showAuthError(errEl, translateAuthError(err.code));
+    const msg = err?.message === 'AUTH_TIMEOUT'
+      ? 'Tempo esgotado ao criar conta. Verifique sua conexão e tente novamente.'
+      : translateAuthError(err.code);
+    showAuthError(errEl, msg);
     btn.disabled = false;
     btn.innerHTML = '<span>Criar conta</span>';
   }
