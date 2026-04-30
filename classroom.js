@@ -1,17 +1,16 @@
 // ===== CLASSROOM.JS =====
-// Integração com Google Classroom via OAuth 2.0 + polling.
-// Completamente isolado — não modifica nenhuma função existente do app.
+// Integração com Google Classroom via OAuth 2.0 Authorization Code + PKCE.
+// O fluxo implícito (response_type=token) foi depreciado pelo Google em 2024
+// e não emite mais tokens — por isso a conexão parava de funcionar.
+// Este arquivo usa o fluxo PKCE, que é o padrão atual e seguro para SPAs.
 //
-// Como usar:
-//   1. Importe initClassroom no app.js e chame após o login do usuário
-//   2. Adicione o botão no index.html (ver comentário no final deste arquivo)
-//   3. Adicione as credenciais OAuth no Google Cloud Console (ver SETUP abaixo)
-//
-// SETUP no Google Cloud Console:
-//   - Ative a API "Google Classroom API"
-//   - Crie credenciais OAuth 2.0 (tipo: Web application)
-//   - Em "Authorized redirect URIs" adicione: https://aplicativo-studyflow-4f501.firebaseapp.com/__/auth/handler
-//   - Copie o CLIENT_ID gerado e cole abaixo
+// SETUP no Google Cloud Console (único lugar que precisa de configuração):
+//   1. Ative a API "Google Classroom API"
+//   2. Crie credenciais OAuth 2.0 → tipo "Web application"
+//   3. Em "Authorized redirect URIs" adicione a URL EXATA:
+//      https://aplicativo-studyflow-4f501.firebaseapp.com/classroom-callback.html
+//      (ou o domínio que você usa em produção + /classroom-callback.html)
+//   4. O CLIENT_ID já está configurado abaixo — não precisa mudar
 
 import { db, auth } from './firebase.js';
 import {
@@ -21,7 +20,7 @@ import {
   updateDoc,
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
-// ─── CONFIGURAÇÃO ────────────────────────────────────────────────────────────
+// ─── CONFIGURAÇÃO ─────────────────────────────────────────────────────────────
 const CLASSROOM_CLIENT_ID = '92968084905-1ete8rjlfs6e3uo3pj4h351bdm8ak947.apps.googleusercontent.com';
 const CLASSROOM_SCOPES = [
   'https://www.googleapis.com/auth/classroom.courses.readonly',
@@ -31,29 +30,19 @@ const CLASSROOM_SCOPES = [
 
 // ─── ESTADO INTERNO ───────────────────────────────────────────────────────────
 let _STATE = null;
-let _hooks = null;
+let _hooks  = null;
 
-// ─── PONTO DE ENTRADA ────────────────────────────────────────────────────────
-/**
- * Chame esta função no app.js após o login do usuário, passando STATE e hooks.
- * Exemplo:
- *   import { initClassroom } from './classroom.js';
- *   initClassroom(STATE, { save, renderTasks, renderDashboard, showToast });
- */
+// ─── PONTO DE ENTRADA ─────────────────────────────────────────────────────────
 export function initClassroom(STATE, hooks) {
   _STATE = STATE;
-  _hooks = hooks;
+  _hooks  = hooks;
 
   injetarBotaoClassroom();
   injetarEstilosClassroom();
 
-  // Ao iniciar, verifica se já tem token salvo e sincroniza automaticamente
   const uid = auth.currentUser?.uid;
-  if (uid) {
-    sincronizarSeConectado(uid);
-  }
+  if (uid) sincronizarSeConectado(uid);
 
-  // Expõe para o navigateTo do app.js chamar ao entrar em Materiais
   window._renderPostsClassroom = async () => {
     if (!uid) return;
     const snap = await getDoc(doc(db, 'users', uid));
@@ -64,79 +53,137 @@ export function initClassroom(STATE, hooks) {
   };
 }
 
-// ─── OAUTH: CONECTAR ─────────────────────────────────────────────────────────
-/**
- * Abre o popup OAuth do Google. Quando o usuário autorizar,
- * salva o access_token no Firestore e faz a primeira sincronização.
- */
-async function conectarClassroom() {
-  if (CLASSROOM_CLIENT_ID === 'SEU_CLIENT_ID_AQUI.apps.googleusercontent.com') {
-    _hooks.showToast('⚠️ Configure o CLIENT_ID no classroom.js antes de usar.');
-    return;
-  }
+// ─── PKCE helpers ─────────────────────────────────────────────────────────────
+function gerarVerifier() {
+  const arr = new Uint8Array(48);
+  crypto.getRandomValues(arr);
+  return btoa(String.fromCharCode(...arr))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
 
+async function gerarChallenge(verifier) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+// ─── OAUTH: CONECTAR (Authorization Code + PKCE) ─────────────────────────────
+async function conectarClassroom() {
   const uid = auth.currentUser?.uid;
   if (!uid) { _hooks.showToast('Faça login primeiro.'); return; }
 
-  // Monta URL de autorização do Google
-  const redirectUri = encodeURIComponent(`${location.origin}/classroom-callback.html`);
-  const scope       = encodeURIComponent(CLASSROOM_SCOPES);
-  const state       = encodeURIComponent(uid); // passa uid para recuperar no callback
+  // Gera e salva o verifier para usar no callback
+  const verifier   = gerarVerifier();
+  const challenge  = await gerarChallenge(verifier);
+  const state      = crypto.randomUUID();
 
-  const authUrl = [
-    'https://accounts.google.com/o/oauth2/v2/auth',
-    `?client_id=${CLASSROOM_CLIENT_ID}`,
-    `&redirect_uri=${redirectUri}`,
-    '&response_type=token',
-    `&scope=${scope}`,
-    `&state=${state}`,
-    '&include_granted_scopes=true',
-  ].join('');
+  sessionStorage.setItem('cl_verifier', verifier);
+  sessionStorage.setItem('cl_state',    state);
+  sessionStorage.setItem('cl_uid',      uid);
 
-  // Abre popup
-  const popup = window.open(authUrl, 'classroom-oauth', 'width=500,height=650,menubar=no,toolbar=no');
+  const redirectUri = `${location.origin}/classroom-callback.html`;
+  const params = new URLSearchParams({
+    client_id:             CLASSROOM_CLIENT_ID,
+    redirect_uri:          redirectUri,
+    response_type:         'code',
+    scope:                 CLASSROOM_SCOPES,
+    state,
+    code_challenge:        challenge,
+    code_challenge_method: 'S256',
+    access_type:           'online',
+    prompt:                'consent',
+  });
 
-  // Escuta mensagem do popup via postMessage (enviada pelo classroom-callback.html)
+  const popup = window.open(
+    `https://accounts.google.com/o/oauth2/v2/auth?${params}`,
+    'classroom-oauth',
+    'width=500,height=650,menubar=no,toolbar=no'
+  );
+
+  // Recebe o code vindo do classroom-callback.html via postMessage
   window.addEventListener('message', async function handler(e) {
     if (e.origin !== location.origin) return;
-    if (e.data?.type !== 'classroom-token') return;
+    if (e.data?.type !== 'classroom-code') return;
     window.removeEventListener('message', handler);
     popup?.close();
 
-    const { access_token, expires_in } = e.data;
-    if (!access_token) {
-      _hooks.showToast('❌ Falha ao conectar com o Classroom.');
+    const { code, state: retState, error } = e.data;
+
+    if (error || !code) {
+      _hooks.showToast('❌ Autorização negada ou falhou.');
+      return;
+    }
+    if (retState !== sessionStorage.getItem('cl_state')) {
+      _hooks.showToast('❌ Erro de segurança (state mismatch). Tente novamente.');
       return;
     }
 
-    // Salva token no Firestore
-    const expiresAt = Date.now() + (parseInt(expires_in) * 1000);
-    await setDoc(
-      doc(db, 'users', uid),
-      { classroom: { access_token, expiresAt, connectedAt: new Date().toISOString() } },
-      { merge: true }
-    );
-
-    _hooks.showToast('✅ Google Classroom conectado!');
-    atualizarBotaoClassroom(true);
-    await sincronizarClassroom(uid, access_token);
+    await trocarCodePorToken(code, uid);
   });
 }
 
+// Troca o authorization code por um access_token via token endpoint
+// Nota: o fluxo PKCE para SPAs não usa client_secret.
+async function trocarCodePorToken(code, uid) {
+  const verifier    = sessionStorage.getItem('cl_verifier');
+  const redirectUri = `${location.origin}/classroom-callback.html`;
+
+  try {
+    const resp = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id:             CLASSROOM_CLIENT_ID,
+        redirect_uri:          redirectUri,
+        grant_type:            'authorization_code',
+        code_verifier:         verifier,
+      }),
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok || !data.access_token) {
+      console.error('[Classroom] Token exchange falhou:', data);
+      // Se falhou por client_secret ausente, instrui o usuário
+      if (data.error === 'invalid_client') {
+        _hooks.showToast('⚠️ Configure o app como "Desktop" no Google Cloud Console para usar PKCE sem secret.');
+      } else {
+        _hooks.showToast(`❌ Falha ao obter token: ${data.error_description || data.error}`);
+      }
+      return;
+    }
+
+    const expiresAt = Date.now() + (data.expires_in * 1000);
+    await setDoc(doc(db, 'users', uid),
+      { classroom: { access_token: data.access_token, expiresAt, connectedAt: new Date().toISOString() } },
+      { merge: true }
+    );
+
+    // Limpa sessão temporária
+    sessionStorage.removeItem('cl_verifier');
+    sessionStorage.removeItem('cl_state');
+    sessionStorage.removeItem('cl_uid');
+
+    _hooks.showToast('✅ Google Classroom conectado!');
+    atualizarBotaoClassroom(true);
+    await sincronizarClassroom(uid, data.access_token);
+
+  } catch (err) {
+    console.error('[Classroom] Erro na troca de token:', err);
+    _hooks.showToast('❌ Erro ao conectar com o Classroom.');
+  }
+}
+
 // ─── SINCRONIZAÇÃO ────────────────────────────────────────────────────────────
-/**
- * Verifica se já existe token salvo no Firestore e sincroniza.
- * Chamado automaticamente ao abrir o app.
- */
 async function sincronizarSeConectado(uid) {
   try {
-    const snap = await getDoc(doc(db, 'users', uid));
+    const snap      = await getDoc(doc(db, 'users', uid));
     const classroom = snap.data()?.classroom;
-    if (!classroom?.access_token) return; // usuário nunca conectou
+    if (!classroom?.access_token) return;
 
-    // Token expirado? (tokens implícitos duram 1h)
     if (Date.now() > classroom.expiresAt) {
-      atualizarBotaoClassroom(false, true); // mostra "reconectar"
+      atualizarBotaoClassroom(false, true);
       return;
     }
 
@@ -147,18 +194,23 @@ async function sincronizarSeConectado(uid) {
   }
 }
 
-/**
- * Busca turmas e atividades do Classroom e importa como tasks no app.
- */
 async function sincronizarClassroom(uid, token) {
   try {
     setBotaoSincronizando(true);
 
-    // 1. Busca turmas ativas
     const cursosRes = await fetch(
       'https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE&pageSize=20',
       { headers: { Authorization: `Bearer ${token}` } }
     );
+
+    // Token inválido / expirado
+    if (cursosRes.status === 401) {
+      await updateDoc(doc(db, 'users', uid), { 'classroom.access_token': null });
+      atualizarBotaoClassroom(false, true);
+      _hooks.showToast('🔄 Sessão do Classroom expirada. Reconecte.');
+      return;
+    }
+
     if (!cursosRes.ok) throw new Error(`Classroom API: ${cursosRes.status}`);
     const { courses = [] } = await cursosRes.json();
 
@@ -168,15 +220,12 @@ async function sincronizarClassroom(uid, token) {
       return;
     }
 
-    // 2. Busca atividades de cada turma em paralelo
     const todasAtividades = await Promise.all(
       courses.map(curso => buscarAtividadesDaTurma(curso, token))
     );
 
-    // 3. Importa as que ainda não existem no STATE
     const novas = importarAtividades(todasAtividades.flat());
 
-    // 4. Salva e renderiza (usando as funções já existentes do app)
     if (novas > 0) {
       await _hooks.save();
       _hooks.renderTasks();
@@ -186,7 +235,6 @@ async function sincronizarClassroom(uid, token) {
       _hooks.showToast('✅ Classroom sincronizado — nenhuma novidade.');
     }
 
-    // Salva timestamp da última sync
     await updateDoc(doc(db, 'users', uid), {
       'classroom.lastSync': new Date().toISOString(),
     });
@@ -208,21 +256,13 @@ async function buscarAtividadesDaTurma(curso, token) {
     if (!res.ok) return [];
     const { courseWork = [] } = await res.json();
     return courseWork.map(cw => ({ ...cw, _nometurma: curso.name }));
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
-/**
- * Converte atividades do Classroom para o formato de task do StudyFlow
- * e adiciona apenas as que ainda não existem (evita duplicatas).
- * Retorna a quantidade de tarefas novas adicionadas.
- */
 function importarAtividades(atividades) {
   const idsExistentes = new Set(_STATE.tasks.map(t => t.classroomId).filter(Boolean));
   let novas = 0;
 
-  // Corrige tasks já importadas que ainda não têm subjectId válido
   for (const task of _STATE.tasks) {
     if (!task.classroomId) continue;
     if (task.subjectId && _STATE.subjects.find(s => s.id === task.subjectId)) continue;
@@ -235,31 +275,29 @@ function importarAtividades(atividades) {
   }
 
   for (const cw of atividades) {
-    if (idsExistentes.has(cw.id)) continue; // já importada
+    if (idsExistentes.has(cw.id)) continue;
 
-    // Converte due date do formato do Classroom (objeto {year,month,day})
     let deadline = null;
     if (cw.dueDate) {
       const { year, month, day } = cw.dueDate;
       deadline = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     }
 
-    // Tenta associar a uma matéria existente pelo nome da turma
     const subject = encontrarMateria(cw._nometurma);
 
     _STATE.tasks.push({
-      id:            `classroom_${cw.id}`,
-      classroomId:   cw.id,                          // chave para evitar duplicatas
-      title:         cw.title || 'Atividade sem título',
-      subjectId:     subject?.id   || null,
-      subjectName:   subject?.name || cw._nometurma, // usa nome da turma se não achar matéria
-      subjectColor:  subject?.color || '#4285F4',    // azul Google como fallback
-      type:          'work',
+      id:           `classroom_${cw.id}`,
+      classroomId:  cw.id,
+      title:        cw.title || 'Atividade sem título',
+      subjectId:    subject?.id    || null,
+      subjectName:  subject?.name  || cw._nometurma,
+      subjectColor: subject?.color || '#4285F4',
+      type:         'work',
       deadline,
-      notes:         cw.description || null,
-      done:          false,
-      createdAt:     cw.creationTime || new Date().toISOString(),
-      source:        'classroom',                    // identifica origem
+      notes:        cw.description || null,
+      done:         false,
+      createdAt:    cw.creationTime || new Date().toISOString(),
+      source:       'classroom',
     });
 
     novas++;
@@ -268,10 +306,6 @@ function importarAtividades(atividades) {
   return novas;
 }
 
-/**
- * Tenta encontrar uma matéria no STATE cujo nome esteja contido
- * no nome da turma do Classroom (busca parcial, case-insensitive).
- */
 function encontrarMateria(nomeTurma) {
   if (!nomeTurma || !_STATE.subjects?.length) return null;
   const turmaLower = nomeTurma.toLowerCase();
@@ -281,11 +315,10 @@ function encontrarMateria(nomeTurma) {
   }) || null;
 }
 
-// ─── BOTÃO INJETADO NA SIDEBAR ────────────────────────────────────────────────
+// ─── BOTÃO NA SIDEBAR ─────────────────────────────────────────────────────────
 function injetarBotaoClassroom() {
   if (document.getElementById('classroom-btn-wrapper')) return;
 
-  // Injeta dentro do footer, antes do botão Sair
   const logoutBtn = document.querySelector('.sidebar-footer .logout-btn');
   if (!logoutBtn) return;
 
@@ -302,11 +335,9 @@ function injetarBotaoClassroom() {
   `;
   logoutBtn.insertAdjacentElement('beforebegin', wrapper);
 
-  // Expõe globalmente para o onclick
   window._conectarClassroom = () => {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
-    // Se já conectado, faz sync manual; senão abre OAuth
     getDoc(doc(db, 'users', uid)).then(snap => {
       const cl = snap.data()?.classroom;
       if (cl?.access_token && Date.now() < cl.expiresAt) {
@@ -339,7 +370,7 @@ function setBotaoSincronizando(ativo) {
   const btn   = document.getElementById('classroom-connect-btn');
   const label = document.getElementById('classroom-btn-label');
   if (!btn || !label) return;
-  btn.disabled    = ativo;
+  btn.disabled      = ativo;
   label.textContent = ativo ? '⏳ Sincronizando...' : '📚 Sincronizar Classroom';
 }
 
@@ -349,33 +380,22 @@ function injetarEstilosClassroom() {
   const style = document.createElement('style');
   style.id = 'classroom-styles';
   style.textContent = `
-    .classroom-btn-wrapper {
-      padding: 0 0 10px;
-      width: 100%;
-    }
+    .classroom-btn-wrapper { padding: 0 0 10px; width: 100%; }
     .classroom-btn {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      width: 100%;
+      display: flex; align-items: center; gap: 8px; width: 100%;
       padding: 10px 14px;
       background: rgba(66, 133, 244, 0.1);
       border: 1px dashed rgba(66, 133, 244, 0.45);
       border-radius: 12px;
       color: rgba(66, 133, 244, 0.95);
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s, border-color 0.2s;
+      font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: background 0.2s, border-color 0.2s;
     }
     .classroom-btn:hover:not(:disabled) {
       background: rgba(66, 133, 244, 0.18);
       border-color: rgba(66, 133, 244, 0.7);
     }
-    .classroom-btn:disabled {
-      opacity: 0.6;
-      cursor: default;
-    }
+    .classroom-btn:disabled { opacity: 0.6; cursor: default; }
     .classroom-btn--connected {
       background: rgba(52, 168, 83, 0.1);
       border-color: rgba(52, 168, 83, 0.45);
@@ -389,38 +409,12 @@ function injetarEstilosClassroom() {
   document.head.appendChild(style);
 }
 
-// ─── INSTRUÇÕES DE INTEGRAÇÃO ─────────────────────────────────────────────────
-//
-// 1. No app.js, adicione o import no topo:
-//      import { initClassroom } from './classroom.js';
-//
-// 2. No app.js, dentro da função initApp() após o initIA(...):
-//      initClassroom(STATE, { save, renderTasks, renderDashboard, showToast });
-//
-// 3. Crie o arquivo classroom-callback.html na raiz do projeto (ver abaixo).
-//
-// 4. No Google Cloud Console:
-//    a. Ative a "Google Classroom API"
-//    b. Crie credenciais OAuth 2.0 → Web application
-//    c. Em "Authorized redirect URIs" adicione:
-//       https://webapp-studyflow.pages.dev/classroom-callback.html
-//    d. Cole o CLIENT_ID gerado na constante CLASSROOM_CLIENT_ID acima
-
 // ─── POSTS DO CLASSROOM NA PÁGINA DE MATERIAIS ────────────────────────────────
-
-/**
- * Busca os posts/avisos recentes de todas as turmas e renderiza
- * numa seção extra no final da página de Materiais.
- * Chamado pelo initClassroom quando o usuário já está conectado,
- * e também ao navegar para a aba Materiais.
- */
 export async function renderPostsClassroom(token) {
-  // Garante que o container existe (cria se não existir)
   let section = document.getElementById('classroom-posts-section');
   if (!section) {
     const linksList = document.getElementById('links-list');
     if (!linksList) return;
-
     section = document.createElement('div');
     section.id = 'classroom-posts-section';
     linksList.insertAdjacentElement('afterend', section);
@@ -433,7 +427,6 @@ export async function renderPostsClassroom(token) {
     </div>`;
 
   try {
-    // 1. Busca turmas ativas
     const cursosRes = await fetch(
       'https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE&pageSize=20',
       { headers: { Authorization: `Bearer ${token}` } }
@@ -441,12 +434,10 @@ export async function renderPostsClassroom(token) {
     if (!cursosRes.ok) throw new Error(`${cursosRes.status}`);
     const { courses = [] } = await cursosRes.json();
 
-    // 2. Busca announcements de cada turma em paralelo
     const todosPosts = (await Promise.all(
       courses.map(c => buscarPostsDaTurma(c, token))
     )).flat();
 
-    // Ordena por data decrescente e pega os 20 mais recentes
     todosPosts.sort((a, b) => new Date(b.creationTime) - new Date(a.creationTime));
     const recentes = todosPosts.slice(0, 20);
 
@@ -485,9 +476,7 @@ async function buscarPostsDaTurma(curso, token) {
     if (!res.ok) return [];
     const { announcements = [] } = await res.json();
     return announcements.map(a => ({ ...a, _nomeTurma: curso.name, _corTurma: encontrarCorTurma(curso.name) }));
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 function encontrarCorTurma(nomeTurma) {
@@ -502,136 +491,67 @@ function renderPostCard(post) {
     ? new Date(post.updateTime).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
     : '';
 
-  // Extrai links dos materiais anexados
   const links = (post.materials || [])
     .map(m => {
-      if (m.driveFile)  return { url: m.driveFile.driveFile?.alternateLink, label: m.driveFile.driveFile?.title || 'Arquivo Drive', icon: '📁' };
-      if (m.youtubeVideo) return { url: m.youtubeVideo.alternateLink, label: m.youtubeVideo.title || 'Vídeo YouTube', icon: '▶️' };
-      if (m.link)       return { url: m.link.url, label: m.link.title || m.link.url, icon: '🔗' };
-      if (m.form)       return { url: m.form.formUrl, label: m.form.title || 'Formulário', icon: '📋' };
+      if (m.driveFile)    return { url: m.driveFile.driveFile?.alternateLink,  label: m.driveFile.driveFile?.title || 'Arquivo Drive', icon: '📁' };
+      if (m.youtubeVideo) return { url: m.youtubeVideo.alternateLink,          label: m.youtubeVideo.title || 'Vídeo YouTube',         icon: '▶️' };
+      if (m.link)         return { url: m.link.url,                            label: m.link.title || m.link.url,                      icon: '🔗' };
+      if (m.form)         return { url: m.form.formUrl,                        label: m.form.title || 'Formulário',                    icon: '📋' };
       return null;
     })
     .filter(Boolean);
 
-  const texto = post.text
-    ? `<p class="cl-post-text">${escapeHtmlPosts(post.text.slice(0, 200))}${post.text.length > 200 ? '…' : ''}</p>`
+  const texto    = post.text
+    ? `<p class="cl-post-text">${esc(post.text.slice(0, 200))}${post.text.length > 200 ? '…' : ''}</p>`
     : '';
 
   const linksHtml = links.length
     ? `<div class="cl-post-links">${links.map(l =>
         `<a class="cl-post-link" href="${l.url}" target="_blank" rel="noopener">
-          <span>${l.icon}</span>
-          <span>${escapeHtmlPosts(l.label)}</span>
+          <span>${l.icon}</span><span>${esc(l.label)}</span>
         </a>`).join('')}</div>`
     : '';
 
   return `
     <div class="cl-post-card">
       <div class="cl-post-card-top">
-        <span class="cl-post-turma" style="color:${post._corTurma}">${escapeHtmlPosts(post._nomeTurma)}</span>
+        <span class="cl-post-turma" style="color:${post._corTurma}">${esc(post._nomeTurma)}</span>
         <span class="cl-post-data">${data}</span>
       </div>
-      ${texto}
-      ${linksHtml}
+      ${texto}${linksHtml}
     </div>`;
 }
 
-function escapeHtmlPosts(str) {
+function esc(str) {
   return String(str)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// CSS dos posts — adicionado junto com os outros estilos do classroom
+// CSS dos posts
 (function injetarEstilosPostsClassroom() {
-  const existing = document.getElementById('classroom-styles');
-  const extra = `
-    /* ── Seção de posts do Classroom em Materiais ── */
-    #classroom-posts-section {
-      margin-top: 24px;
-      padding-top: 20px;
-      border-top: 1px solid rgba(255,255,255,0.07);
-    }
-    .cl-posts-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-    }
-    .cl-posts-title {
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--text1, #fff);
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-    .cl-posts-count, .cl-posts-loading {
-      font-size: 11px;
-      color: var(--text2, rgba(255,255,255,0.45));
-    }
-    .cl-posts-empty {
-      font-size: 13px;
-      color: var(--text2, rgba(255,255,255,0.45));
-      padding: 8px 0;
-    }
-    .cl-post-card {
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.07);
-      border-radius: 12px;
-      padding: 12px 14px;
-      margin-bottom: 10px;
-    }
-    .cl-post-card-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 6px;
-    }
-    .cl-post-turma {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-    .cl-post-data {
-      font-size: 11px;
-      color: var(--text2, rgba(255,255,255,0.4));
-    }
-    .cl-post-text {
-      font-size: 13px;
-      color: var(--text1, #fff);
-      line-height: 1.5;
-      margin: 0 0 8px;
-      white-space: pre-wrap;
-    }
-    .cl-post-links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 6px;
-    }
+  if (document.getElementById('classroom-posts-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'classroom-posts-styles';
+  s.textContent = `
+    #classroom-posts-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
+    .cl-posts-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .cl-posts-title { font-size: 13px; font-weight: 700; color: var(--text); letter-spacing: 0.04em; text-transform: uppercase; }
+    .cl-posts-count, .cl-posts-loading { font-size: 11px; color: var(--text2); }
+    .cl-posts-empty { font-size: 13px; color: var(--text2); padding: 8px 0; }
+    .cl-post-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+    .cl-post-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .cl-post-turma { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+    .cl-post-data { font-size: 11px; color: var(--text2); }
+    .cl-post-text { font-size: 13px; color: var(--text); line-height: 1.5; margin: 0 0 8px; white-space: pre-wrap; }
+    .cl-post-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
     .cl-post-link {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      padding: 5px 10px;
-      background: rgba(66,133,244,0.1);
-      border: 1px solid rgba(66,133,244,0.25);
-      border-radius: 8px;
-      font-size: 12px;
-      color: rgba(66,133,244,0.95);
-      text-decoration: none;
-      transition: background 0.15s;
+      display: flex; align-items: center; gap: 5px; padding: 5px 10px;
+      background: rgba(66,133,244,0.1); border: 1px solid rgba(66,133,244,0.25);
+      border-radius: 8px; font-size: 12px; color: rgba(66,133,244,0.95);
+      text-decoration: none; transition: background 0.15s;
     }
     .cl-post-link:hover { background: rgba(66,133,244,0.2); }
   `;
-
-  if (existing) {
-    existing.textContent += extra;
-  } else {
-    const s = document.createElement('style');
-    s.id = 'classroom-posts-styles';
-    s.textContent = extra;
-    document.head.appendChild(s);
-  }
+  document.head.appendChild(s);
 })();

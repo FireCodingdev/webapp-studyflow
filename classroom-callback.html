@@ -24,21 +24,20 @@
     <p>Esta janela fechará automaticamente.</p>
   </div>
   <script>
-    // Extrai parâmetros do hash da URL (fluxo OAuth implícito)
-    // Ex: #access_token=xxx&token_type=Bearer&expires_in=3599&state=uid
-    const params = new URLSearchParams(location.hash.slice(1));
-    const access_token = params.get('access_token');
-    const expires_in   = params.get('expires_in');
+    // Fluxo Authorization Code + PKCE:
+    // O Google redireciona para esta página com ?code=...&state=...
+    // Enviamos o code para a janela pai (o app) via postMessage,
+    // que vai trocá-lo por um access_token no endpoint oauth2.googleapis.com/token.
+    const params = new URLSearchParams(location.search);
+    const code   = params.get('code');
+    const state  = params.get('state');
+    const error  = params.get('error');
 
-    if (access_token) {
-      // Envia token para a janela pai (o app StudyFlow)
-      window.opener?.postMessage(
-        { type: 'classroom-token', access_token, expires_in },
-        location.origin
-      );
-    }
+    window.opener?.postMessage(
+      { type: 'classroom-code', code, state, error },
+      location.origin
+    );
 
-    // Fecha o popup após 1s (dá tempo para a mensagem ser recebida)
     setTimeout(() => window.close(), 1000);
   </script>
 </body>
