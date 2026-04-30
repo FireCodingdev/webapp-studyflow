@@ -1393,46 +1393,191 @@ window.filterFlashcards = function(filter) {
   renderFlashcards();
 };
 
-// ===== LINKS (Central de Materiais) =====
+// ===== MATERIAIS (por matéria, com pasta local) =====
+
+// Guarda handles de pastas por subjectId: { [subjectId]: FileSystemDirectoryHandle }
+const _matFolders = {};
+// Guarda arquivos listados por subjectId: { [subjectId]: FileSystemFileHandle[] }
+const _matFiles = {};
+
 function renderLinks() {
   const el = document.getElementById('links-list');
   if (!el) return;
+
   if (STATE.subjects.length === 0) {
     el.innerHTML = `
       <div class="empty-state">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
-        <p>Adicione matérias com links para vê-los aqui</p>
+        <p>Adicione matérias para organizar seus materiais</p>
         <button onclick="openAddSubject()">Adicionar matéria</button>
       </div>`;
     return;
   }
-  el.innerHTML = STATE.subjects.map(s => {
+
+  const hasFSA = 'showDirectoryPicker' in window;
+
+  el.innerHTML = STATE.subjects.map((s, i) => {
     const links = s.links || [];
+    const isOpen = i === 0; // primeira aberta por padrão
     return `
-    <div class="links-subject-block">
-      <div class="links-subject-header">
-        <span class="links-dot" style="background:${s.color}"></span>
-        <span class="links-subject-name">${escapeHtml(s.name)}</span>
-        <button class="links-edit-btn" onclick="openEditSubjectLinks('${s.id}')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        </button>
+    <div class="mat-block" id="mat-block-${s.id}">
+      <div class="mat-header" onclick="toggleMatBlock('${s.id}')">
+        <div class="mat-header-left">
+          <span class="mat-dot" style="background:${s.color}"></span>
+          <span class="mat-name">${escapeHtml(s.name)}</span>
+        </div>
+        <div class="mat-header-right">
+          <button class="mat-icon-btn" title="Editar links" onclick="event.stopPropagation();openEditSubjectLinks('${s.id}')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <svg class="mat-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
       </div>
-      ${links.length === 0
-        ? `<p class="links-empty-sub">Nenhum link adicionado</p>`
-        : links.map(link => {
-            const domain = (() => { try { return new URL(link).hostname.replace('www.',''); } catch { return String(link); } })();
-            const icon = domain.includes('youtube') ? '▶️' : domain.includes('drive.google') ? '📁' : domain.includes('notion') ? '📝' : domain.includes('github') ? '💻' : '🔗';
-            const safeHref = isHttpUrl(link) ? link : '#';
-            return `<a class="link-item" href="${safeHref}" target="_blank" rel="noopener">
-              <span class="link-icon">${icon}</span>
-              <span class="link-domain">${escapeHtml(domain)}</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="link-arrow"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            </a>`;
-          }).join('')
-      }
+
+      <div class="mat-body ${isOpen ? 'mat-body--open' : ''}" id="mat-body-${s.id}">
+
+        <!-- LINKS -->
+        <div class="mat-section">
+          <div class="mat-section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+            Links úteis
+          </div>
+          <div class="mat-links-grid">
+            ${links.length === 0
+              ? `<span class="mat-empty-hint">Nenhum link — clique em ✏️ para adicionar</span>`
+              : links.map(link => {
+                  const domain = (() => { try { return new URL(link).hostname.replace('www.',''); } catch { return String(link); } })();
+                  const icon = domain.includes('youtube') ? '▶️' : domain.includes('drive.google') ? '📁' : domain.includes('notion') ? '📝' : domain.includes('github') ? '💻' : '🔗';
+                  const safeHref = isHttpUrl(link) ? link : '#';
+                  return `<a class="mat-link-chip" href="${safeHref}" target="_blank" rel="noopener">
+                    <span>${icon}</span>
+                    <span class="mat-link-domain">${escapeHtml(domain)}</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  </a>`;
+                }).join('')
+            }
+          </div>
+        </div>
+
+        <!-- ARQUIVOS LOCAIS -->
+        <div class="mat-section">
+          <div class="mat-section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+            Pasta de arquivos
+          </div>
+          ${hasFSA ? `
+          <div class="mat-folder-zone" id="mat-folder-${s.id}">
+            <div class="mat-folder-empty" id="mat-folder-empty-${s.id}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+              <span>Nenhuma pasta vinculada</span>
+              <button class="mat-btn-folder" onclick="matOpenFolder('${s.id}')">
+                📂 Vincular pasta local
+              </button>
+            </div>
+            <div class="mat-folder-content" id="mat-folder-content-${s.id}" style="display:none">
+              <div class="mat-folder-toolbar">
+                <span class="mat-folder-path" id="mat-folder-path-${s.id}"></span>
+                <div style="display:flex;gap:6px">
+                  <button class="mat-btn-sm" onclick="matRefresh('${s.id}')">↻ Atualizar</button>
+                  <button class="mat-btn-sm" onclick="matOpenFolder('${s.id}')">📂 Trocar pasta</button>
+                </div>
+              </div>
+              <div class="mat-files-grid" id="mat-files-${s.id}"></div>
+            </div>
+          </div>
+          ` : `<p class="mat-empty-hint">Seu navegador não suporta acesso a pastas locais. Use Chrome ou Edge.</p>`}
+        </div>
+
+      </div>
     </div>`;
   }).join('');
 }
+
+window.toggleMatBlock = function(id) {
+  const body = document.getElementById(`mat-body-${id}`);
+  if (!body) return;
+  body.classList.toggle('mat-body--open');
+  const chevron = document.querySelector(`#mat-block-${id} .mat-chevron`);
+  if (chevron) chevron.style.transform = body.classList.contains('mat-body--open') ? 'rotate(180deg)' : '';
+};
+
+window.matOpenFolder = async function(subjectId) {
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'read' });
+    _matFolders[subjectId] = handle;
+    await matRefresh(subjectId);
+  } catch (e) {
+    if (e.name !== 'AbortError') showToast('Erro ao abrir pasta');
+  }
+};
+
+window.matRefresh = async function(subjectId) {
+  const handle = _matFolders[subjectId];
+  if (!handle) return;
+
+  const emptyEl   = document.getElementById(`mat-folder-empty-${subjectId}`);
+  const contentEl = document.getElementById(`mat-folder-content-${subjectId}`);
+  const pathEl    = document.getElementById(`mat-folder-path-${subjectId}`);
+  const gridEl    = document.getElementById(`mat-files-${subjectId}`);
+  if (!contentEl || !gridEl) return;
+
+  emptyEl.style.display   = 'none';
+  contentEl.style.display = 'block';
+  if (pathEl) pathEl.textContent = `📂 ${handle.name}`;
+
+  const files = [];
+  try {
+    for await (const entry of handle.values()) {
+      if (entry.kind === 'file') files.push(entry);
+    }
+  } catch { showToast('Sem permissão para ler a pasta'); return; }
+
+  _matFiles[subjectId] = files;
+
+  if (files.length === 0) {
+    gridEl.innerHTML = `<span class="mat-empty-hint">Pasta vazia</span>`;
+    return;
+  }
+
+  const imgExts = ['jpg','jpeg','png','gif','webp','svg','bmp'];
+  const docExts = ['pdf','doc','docx','xls','xlsx','ppt','pptx','txt','md'];
+
+  gridEl.innerHTML = files.map((f, idx) => {
+    const ext = f.name.split('.').pop().toLowerCase();
+    const isImg = imgExts.includes(ext);
+    const isDoc = docExts.includes(ext);
+    const icon = isImg ? '🖼️' : isDoc ? (ext === 'pdf' ? '📄' : ext.includes('xls') ? '📊' : ext.includes('ppt') ? '📑' : '📝') : '📎';
+    return `
+      <div class="mat-file-card" onclick="matOpenFile('${subjectId}',${idx})" title="${escapeHtml(f.name)}">
+        <div class="mat-file-thumb" id="mat-thumb-${subjectId}-${idx}">
+          <span class="mat-file-icon">${icon}</span>
+        </div>
+        <span class="mat-file-name">${escapeHtml(f.name)}</span>
+      </div>`;
+  }).join('');
+
+  // Carrega previews de imagens de forma assíncrona
+  for (let idx = 0; idx < files.length; idx++) {
+    const ext = files[idx].name.split('.').pop().toLowerCase();
+    if (!imgExts.includes(ext)) continue;
+    try {
+      const file = await files[idx].getFile();
+      const url  = URL.createObjectURL(file);
+      const thumb = document.getElementById(`mat-thumb-${subjectId}-${idx}`);
+      if (thumb) thumb.innerHTML = `<img src="${url}" alt="${escapeHtml(files[idx].name)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px">`;
+    } catch {}
+  }
+};
+
+window.matOpenFile = async function(subjectId, idx) {
+  const files = _matFiles[subjectId];
+  if (!files || !files[idx]) return;
+  try {
+    const file = await files[idx].getFile();
+    const url  = URL.createObjectURL(file);
+    window.open(url, '_blank');
+  } catch { showToast('Não foi possível abrir o arquivo'); }
+};
 
 window.openEditSubjectLinks = function(id) {
   const subject = STATE.subjects.find(s => s.id === id);

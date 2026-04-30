@@ -1391,3 +1391,141 @@ a { color: inherit; text-decoration: none; }
 
 /* Empty small */
 .db-empty-small { font-size: 13px; color: var(--text2); padding: 10px 0; }
+
+/* ===== MATERIAIS — nova interface ===== */
+.links-list { display: flex; flex-direction: column; gap: 10px; padding-bottom: 40px; }
+
+.mat-block {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.mat-block:hover { border-color: rgba(255,255,255,0.1); }
+
+.mat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.mat-header-left { display: flex; align-items: center; gap: 10px; }
+.mat-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.mat-name { font-size: 14px; font-weight: 700; letter-spacing: 0.03em; }
+.mat-header-right { display: flex; align-items: center; gap: 6px; }
+.mat-icon-btn {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px; color: var(--text2);
+  transition: background 0.15s, color 0.15s;
+}
+.mat-icon-btn:hover { background: var(--bg3); color: var(--text); }
+.mat-chevron { color: var(--text2); transition: transform 0.25s ease; flex-shrink: 0; }
+
+.mat-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease, padding 0.2s;
+}
+.mat-body--open {
+  max-height: 1200px;
+  padding-bottom: 4px;
+}
+
+.mat-section {
+  padding: 0 16px 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 0;
+}
+.mat-section + .mat-section { border-top: 1px solid var(--border); }
+
+.mat-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text2);
+  margin-bottom: 10px;
+}
+
+.mat-links-grid { display: flex; flex-wrap: wrap; gap: 7px; }
+.mat-link-chip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 11px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text);
+  transition: background 0.15s, border-color 0.15s;
+  text-decoration: none;
+}
+.mat-link-chip:hover { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.15); }
+.mat-link-domain { color: var(--text2); }
+.mat-empty-hint { font-size: 12px; color: var(--text3); font-style: italic; }
+
+/* Pasta local */
+.mat-folder-zone { width: 100%; }
+.mat-folder-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 20px; border: 1.5px dashed var(--border); border-radius: 12px;
+  color: var(--text2); font-size: 13px; text-align: center;
+}
+.mat-btn-folder {
+  margin-top: 4px;
+  padding: 7px 16px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(108,99,255,0.3);
+  border-radius: 10px;
+  color: var(--accent);
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.mat-btn-folder:hover { background: rgba(108,99,255,0.2); }
+
+.mat-folder-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 12px; flex-wrap: wrap;
+}
+.mat-folder-path { font-size: 12px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+.mat-btn-sm {
+  padding: 5px 10px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  background: var(--bg3); border: 1px solid var(--border); color: var(--text2);
+  cursor: pointer; transition: background 0.15s;
+}
+.mat-btn-sm:hover { background: rgba(255,255,255,0.07); color: var(--text); }
+
+.mat-files-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 10px;
+}
+.mat-file-card {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 10px 8px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 12px; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  overflow: hidden;
+}
+.mat-file-card:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.14); }
+.mat-file-thumb {
+  width: 56px; height: 56px; border-radius: 8px;
+  background: var(--bg); display: flex; align-items: center; justify-content: center;
+  overflow: hidden; flex-shrink: 0;
+}
+.mat-file-icon { font-size: 24px; }
+.mat-file-name {
+  font-size: 11px; color: var(--text2); text-align: center;
+  word-break: break-all; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  max-width: 100%;
+}
