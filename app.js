@@ -1286,6 +1286,18 @@ window.saveFlashcard = async function() {
   showToast('✅ Flashcard criado!');
 };
 
+// Paleta de cores para sticky notes (varia por índice)
+const FC_NOTE_COLORS = [
+  { bg: '#fef08a', text: '#713f12', fold: '#eab308' }, // amarelo
+  { bg: '#86efac', text: '#14532d', fold: '#22c55e' }, // verde
+  { bg: '#93c5fd', text: '#1e3a5f', fold: '#3b82f6' }, // azul
+  { bg: '#fca5a5', text: '#7f1d1d', fold: '#ef4444' }, // vermelho
+  { bg: '#f9a8d4', text: '#831843', fold: '#ec4899' }, // rosa
+  { bg: '#c4b5fd', text: '#3b0764', fold: '#8b5cf6' }, // roxo
+  { bg: '#fdba74', text: '#7c2d12', fold: '#f97316' }, // laranja
+  { bg: '#67e8f9', text: '#164e63', fold: '#06b6d4' }, // ciano
+];
+
 function renderFlashcards() {
   const el = document.getElementById('flashcards-list');
   if (!el) return;
@@ -1312,45 +1324,67 @@ function renderFlashcards() {
     return;
   }
 
+  // Determina índice estável de cor por id do card
+  const colorIdx = (id) => {
+    let h = 0;
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) & 0xffff;
+    return h % FC_NOTE_COLORS.length;
+  };
+
   el.innerHTML = cards.map(c => {
     const isDue = c.nextReview <= today;
+    const col = FC_NOTE_COLORS[colorIdx(c.id)];
+    // se tem cor de matéria, tinta levemente com ela na aba superior
+    const subCol = c.subjectId ? getSubjectColor(c.subjectId, c.subjectName, c.subjectColor) : col.fold;
+
     return `
-    <div class="fc-card ${isDue ? 'fc-due' : ''}" id="fc-${c.id}">
-      <div class="fc-card-inner" onclick="flipCard('${c.id}')">
-        <div class="fc-front">
-          ${c.subjectName ? `<span class="fc-subject-tag" style="background:${getSubjectColor(c.subjectId, c.subjectName, c.subjectColor)}22;color:${getSubjectColor(c.subjectId, c.subjectName, c.subjectColor)}">${escapeHtml(c.subjectName)}</span>` : ''}
-          ${isDue ? '<span class="fc-due-badge">Revisar</span>' : ''}
-          <p class="fc-text">${escapeHtml(c.front)}</p>
-          <span class="fc-hint">Toque para revelar</span>
+    <div class="sn-card ${isDue ? 'sn-due' : ''}" id="fc-${c.id}"
+         style="--sn-bg:${col.bg};--sn-text:${col.text};--sn-fold:${col.fold};--sn-sub:${subCol}">
+
+      <!-- topo com matéria + pin -->
+      <div class="sn-top">
+        <span class="sn-subject">${c.subjectName ? escapeHtml(c.subjectName) : '&nbsp;'}</span>
+        <div style="display:flex;gap:4px;align-items:center">
+          ${isDue ? '<span class="sn-due-dot" title="Para revisar hoje">●</span>' : ''}
+          <button class="sn-del-btn" onclick="deleteFlashcard('${c.id}')" title="Excluir">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
         </div>
-        <div class="fc-back" style="display:none">
-          <p class="fc-text">${escapeHtml(c.back)}</p>
-          <div class="fc-rating">
-            <span class="fc-rating-label">Como foi?</span>
-            <div class="fc-rating-btns">
-              <button class="fc-btn fc-btn-fail" onclick="rateCard(event,'${c.id}',1)">Errei</button>
-              <button class="fc-btn fc-btn-hard" onclick="rateCard(event,'${c.id}',3)">Difícil</button>
-              <button class="fc-btn fc-btn-ok" onclick="rateCard(event,'${c.id}',4)">Bom</button>
-              <button class="fc-btn fc-btn-easy" onclick="rateCard(event,'${c.id}',5)">Fácil</button>
+      </div>
+
+      <!-- corpo clicável (vira o card) -->
+      <div class="sn-body" onclick="flipCard('${c.id}')">
+        <div class="sn-front" id="sn-front-${c.id}">
+          <p class="sn-text">${escapeHtml(c.front)}</p>
+          <span class="sn-hint">toque para revelar ↓</span>
+        </div>
+        <div class="sn-back" id="sn-back-${c.id}" style="display:none">
+          <p class="sn-text sn-answer">${escapeHtml(c.back)}</p>
+          <div class="sn-rating" onclick="event.stopPropagation()">
+            <span class="sn-rating-label">Como foi?</span>
+            <div class="sn-rating-btns">
+              <button class="sn-rbtn sn-fail" onclick="rateCard(event,'${c.id}',1)">😣 Errei</button>
+              <button class="sn-rbtn sn-hard" onclick="rateCard(event,'${c.id}',3)">😅 Difícil</button>
+              <button class="sn-rbtn sn-ok"   onclick="rateCard(event,'${c.id}',4)">😊 Bom</button>
+              <button class="sn-rbtn sn-easy" onclick="rateCard(event,'${c.id}',5)">🤩 Fácil</button>
             </div>
           </div>
         </div>
       </div>
-      <button class="fc-delete" onclick="deleteFlashcard('${c.id}')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
-      </button>
+
+      <!-- dobra no canto inferior direito -->
+      <div class="sn-fold"></div>
     </div>`;
   }).join('');
 }
 
 window.flipCard = function(id) {
-  const el = document.getElementById(`fc-${id}`);
-  if (!el) return;
-  const front = el.querySelector('.fc-front');
-  const back = el.querySelector('.fc-back');
+  const front = document.getElementById(`sn-front-${id}`);
+  const back  = document.getElementById(`sn-back-${id}`);
+  if (!front || !back) return;
   const isFlipped = back.style.display !== 'none';
-  front.style.display = isFlipped ? 'block' : 'none';
-  back.style.display = isFlipped ? 'none' : 'block';
+  front.style.display = isFlipped ? 'flex' : 'none';
+  back.style.display  = isFlipped ? 'none' : 'flex';
 };
 
 window.rateCard = async function(evt, id, quality) {
