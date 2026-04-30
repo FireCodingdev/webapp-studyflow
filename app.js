@@ -523,7 +523,7 @@ window.navigateTo = function(page) {
   document.getElementById(`page-${page}`).classList.add('active');
   const navEl = document.querySelector(`[data-page="${page}"]`);
   if (navEl) navEl.classList.add('active');
-  const titles = { dashboard: 'Dashboard', schedule: 'Cronograma', tasks: 'Atividades', flashcards: 'Flashcards', links: 'Materiais & Links', feed: 'Feed Social', social: 'Comunidade' 
+  const titles = { dashboard: 'Dashboard', schedule: 'Cronograma', tasks: 'Atividades', flashcards: 'Flashcards', links: 'Materiais & Links', feed: 'Feed Social', social: 'Comunidade' };
   document.getElementById('page-title').textContent = titles[page] || page;
   STATE.currentPage = page;
   
@@ -531,13 +531,13 @@ window.navigateTo = function(page) {
   if (page === 'schedule') renderSchedule();
   if (page === 'tasks') renderTasks();
   if (page === 'flashcards') renderFlashcards();
-  if (page === 'links') 
-  if (page === 'feed') window._renderFeed?.();
-  if (page === 'social') window._renderSocialPage?.();{
+  if (page === 'links') {
     renderLinks();
     // Exibe posts do Classroom se o usuário já estiver conectado
     window._renderPostsClassroom?.();
   }
+  if (page === 'feed') window._renderFeed?.();
+  if (page === 'social') window._renderSocialPage?.();
   closeSidebar();
 };
 
