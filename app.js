@@ -805,25 +805,40 @@ function renderDashboard() {
   // ── Provas agendadas ────────────────────────────────────
   const examsEl = document.getElementById('db-exams-list');
   if (examsEl) {
-    const todayStr = now.toISOString().slice(0,10);
-    const sorted = exams
+    const todayD = new Date(); todayD.setHours(0,0,0,0);
+    // Apenas provas futuras ou de hoje (passadas somem da lista)
+    const upcoming = exams
+      .filter(e => {
+        const d = new Date(e.deadline + 'T00:00:00');
+        return d >= todayD;
+      })
       .sort((a,b) => a.deadline.localeCompare(b.deadline));
-    if (sorted.length === 0) {
+
+    if (upcoming.length === 0) {
       examsEl.innerHTML = `<div class="db-empty-small">Nenhuma prova agendada</div>`;
     } else {
-      examsEl.innerHTML = sorted.map(e => {
+      examsEl.innerHTML = upcoming.map(e => {
         const d = new Date(e.deadline + 'T00:00:00');
-        const todayD = new Date(); todayD.setHours(0,0,0,0);
         const diff = Math.round((d - todayD) / (1000*60*60*24));
-        const diffLabel = diff === 0 ? 'HOJE' : diff === 1 ? 'Amanhã' : diff < 0 ? `${Math.abs(diff)}d atrás` : `${diff}d`;
-        const urgCls = diff <= 0 ? 'db-exam-urgent' : diff <= 3 ? 'db-exam-soon' : diff <= 7 ? 'db-exam-week' : 'db-exam-ok';
+
+        // Data formatada: "seg, 14 jul" ou "HOJE"
+        const dateLabel = diff === 0 ? 'HOJE' : diff === 1 ? 'amanhã' :
+          d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' })
+           .replace('.', '').replace(',', ',');
+
+        const urgCls = diff === 0 ? 'db-exam-urgent' : diff <= 3 ? 'db-exam-soon' : diff <= 7 ? 'db-exam-week' : 'db-exam-ok';
+        const subjectColor = e.subjectColor || 'var(--accent)';
+
         return `
-          <div class="db-exam-row">
+          <div class="db-exam-card" style="border-left: 3px solid ${subjectColor}">
             <div class="db-exam-info">
               <span class="db-exam-title">${escapeHtml(e.title)}</span>
-              ${e.subjectName ? `<span class="db-exam-sub" style="color:${e.subjectColor}">${escapeHtml(e.subjectName)}</span>` : ''}
+              ${e.subjectName ? `<span class="db-exam-sub" style="color:${subjectColor}">${escapeHtml(e.subjectName)}</span>` : ''}
             </div>
-            <span class="db-exam-badge ${urgCls}">${diffLabel}</span>
+            <div class="db-exam-right">
+              <span class="db-exam-badge ${urgCls}">${dateLabel}</span>
+              ${diff > 0 ? `<span class="db-exam-countdown">${diff}d</span>` : ''}
+            </div>
           </div>`;
       }).join('');
     }
