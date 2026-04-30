@@ -871,8 +871,14 @@ function renderDashboard() {
           d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' })
            .replace(/\./g, '');
 
-        // Sempre busca a cor atual da matéria pelo id — ignora a cor snapshottada na tarefa
-        const subjectColor = getSubjectColor(e.subjectId, e.subjectName, e.subjectColor);
+        // Cor baseada no número/tipo da prova
+        const titleLower = (e.title || '').toLowerCase();
+        const subjectColor =
+          /final/i.test(titleLower)     ? '#222222' :
+          /prova\s*3/i.test(titleLower) ? '#e74c3c' :
+          /prova\s*2/i.test(titleLower) ? '#1e90ff' :
+          /prova\s*1/i.test(titleLower) ? '#2ed573' :
+          getSubjectColor(e.subjectId, e.subjectName, e.subjectColor);
 
         const notesLine = e.notes
           ? `<div class="exam-card-notes" style="color:${subjectColor}">${escapeHtml(e.notes)}</div>`
