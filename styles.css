@@ -2028,7 +2028,7 @@ a { color: inherit; text-decoration: none; }
   top: 0; left: 0;
   width: 100%; max-width: 420px;
   height: 100%;
-  background: var(--bg2);
+  background: #1c1c1e;
   z-index: 1200;
   transform: translateX(-100%);
   transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
@@ -2037,15 +2037,15 @@ a { color: inherit; text-decoration: none; }
   flex-direction: column;
 }
 .accs-panel.open { transform: translateX(0); }
-.accs-panel.accs-sub { z-index: 1300; }
+.accs-panel.accs-sub { z-index: 1300; background: #1c1c1e; }
 
 .accs-header {
-  padding: 20px 20px 24px;
-  background: var(--accent);
+  padding: 20px 20px 28px;
+  background: #6c63ff;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
+  gap: 14px;
   position: relative;
 }
 
@@ -2065,34 +2065,37 @@ a { color: inherit; text-decoration: none; }
   margin-top: 4px;
 }
 .accs-avatar {
-  width: 72px; height: 72px;
+  width: 80px; height: 80px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.22);
   display: flex; align-items: center; justify-content: center;
-  font-size: 24px; font-weight: 800;
+  font-size: 26px; font-weight: 800;
   color: #fff;
   overflow: hidden;
 }
 .accs-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .accs-avatar-edit {
-  position: absolute; bottom: 0; right: 0;
-  width: 26px; height: 26px;
+  position: absolute; bottom: 2px; right: 2px;
+  width: 28px; height: 28px;
   border-radius: 50%;
-  background: var(--bg2);
+  background: #222;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
-  border: 2px solid var(--accent);
+  border: 2px solid #6c63ff;
 }
-.accs-avatar-edit svg { width: 13px; height: 13px; color: var(--accent); }
+.accs-avatar-edit svg { width: 14px; height: 14px; stroke: #fff; }
 
 .accs-display-name {
-  font-size: 20px; font-weight: 700; color: #fff;
+  font-size: 22px; font-weight: 700; color: #fff;
+  margin-top: 2px;
 }
 .accs-email-display {
-  font-size: 13px; color: rgba(255,255,255,0.8);
+  font-size: 13px; color: rgba(255,255,255,0.85);
+  margin-top: -8px;
 }
 .accs-username-tag {
-  font-size: 12px; color: rgba(255,255,255,0.7);
+  font-size: 13px; color: rgba(255,255,255,0.75);
+  margin-top: -8px;
 }
 
 .accs-list {
@@ -2105,42 +2108,42 @@ a { color: inherit; text-decoration: none; }
   cursor: pointer;
   transition: background 0.15s;
 }
-.accs-item:hover { background: var(--accent-soft); }
+.accs-item:hover { background: rgba(255,255,255,0.06); }
 .accs-item-icon {
-  width: 40px; height: 40px;
-  border-radius: 10px;
+  width: 42px; height: 42px;
+  border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
 .accs-item-icon svg { width: 20px; height: 20px; stroke: #fff; }
 .accs-item-text { display: flex; flex-direction: column; flex: 1; }
-.accs-item-title { font-size: 15px; font-weight: 600; color: var(--text); }
-.accs-item-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
-.accs-chevron { width: 16px; height: 16px; color: var(--text2); flex-shrink: 0; }
-.accs-divider { height: 8px; background: var(--bg); }
+.accs-item-title { font-size: 15px; font-weight: 600; color: #fff; }
+.accs-item-sub { font-size: 12px; color: rgba(255,255,255,0.45); margin-top: 2px; }
+.accs-chevron { width: 16px; height: 16px; color: rgba(255,255,255,0.3); flex-shrink: 0; }
+.accs-divider { height: 8px; background: #111; }
 
 /* Sub-panel */
 .accs-sub-header {
   display: flex; align-items: center; gap: 12px;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg2);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: #1c1c1e;
   position: sticky; top: 0; z-index: 1;
 }
-.accs-sub-title { font-size: 18px; font-weight: 700; color: var(--text); }
+.accs-sub-title { font-size: 18px; font-weight: 700; color: #fff; }
 .accs-sub-body { padding: 20px; display: flex; flex-direction: column; gap: 18px; }
 
 /* Sub-panel form elements */
 .accs-field { display: flex; flex-direction: column; gap: 6px; }
-.accs-field label { font-size: 12px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
+.accs-field label { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.5px; }
 .accs-field input, .accs-field textarea {
-  background: var(--bg); border: 1px solid var(--border);
+  background: #2c2c2e; border: 1px solid rgba(255,255,255,0.1);
   border-radius: 10px; padding: 12px 14px;
-  font-size: 15px; color: var(--text);
+  font-size: 15px; color: #fff;
   outline: none; transition: border 0.2s;
   font-family: inherit;
 }
-.accs-field input:focus, .accs-field textarea:focus { border-color: var(--accent); }
+.accs-field input:focus, .accs-field textarea:focus { border-color: #6c63ff; }
 .accs-field textarea { resize: vertical; min-height: 80px; }
 
 .accs-save-btn {
@@ -2154,14 +2157,14 @@ a { color: inherit; text-decoration: none; }
 
 .accs-info-row {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 12px 0; border-bottom: 1px solid var(--border);
+  padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.07);
   font-size: 14px;
 }
-.accs-info-row span:first-child { color: var(--text2); }
-.accs-info-row span:last-child { color: var(--text); font-weight: 500; }
+.accs-info-row span:first-child { color: rgba(255,255,255,0.5); }
+.accs-info-row span:last-child { color: #fff; font-weight: 500; }
 
 .accs-section-card {
-  background: var(--bg); border-radius: 14px; padding: 16px;
+  background: #2c2c2e; border-radius: 14px; padding: 16px;
   display: flex; flex-direction: column; gap: 12px;
 }
 
@@ -2177,7 +2180,7 @@ a { color: inherit; text-decoration: none; }
   display: flex; justify-content: space-between; align-items: center;
   padding: 4px 0;
 }
-.accs-toggle-row span { font-size: 14px; color: var(--text); }
+.accs-toggle-row span { font-size: 14px; color: #fff; }
 .accs-toggle {
   width: 44px; height: 24px;
   background: var(--border); border-radius: 12px;
