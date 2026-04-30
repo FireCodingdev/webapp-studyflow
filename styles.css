@@ -1731,6 +1731,17 @@ a { color: inherit; text-decoration: none; }
   margin-bottom: 4px;
 }
 
+.fc-private-notice {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text2);
+  background: var(--accent-soft);
+  border-radius: 8px;
+  padding: 5px 10px;
+  margin: 6px 0 4px;
+}
 .fc-feed-bar {
   display: flex;
   align-items: center;
@@ -1753,6 +1764,27 @@ a { color: inherit; text-decoration: none; }
   color: var(--text2);
   font-size: 13px;
   padding: 32px 0;
+}
+
+/* Autor no Feed Global */
+.fc-author-avatar {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.25);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+  flex-shrink: 0;
+}
+.fc-author-name {
+  font-size: 12px; font-weight: 700;
+  color: rgba(255,255,255,0.95);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fc-own-badge {
+  font-size: 9px; font-weight: 600;
+  background: rgba(255,255,255,0.25);
+  border-radius: 4px; padding: 1px 4px;
+  vertical-align: middle; margin-left: 4px;
 }
 
 /* Ações dentro do card do feed */

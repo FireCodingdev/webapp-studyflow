@@ -1449,19 +1449,8 @@ window.switchFcTab = function(tab) {
   document.querySelectorAll('.fc-panel').forEach(p => p.classList.remove('fc-panel--active'));
   document.getElementById(`fc-panel-${tab}`)?.classList.add('fc-panel--active');
 
-  const fab = document.getElementById('fc-fab');
-  if (fab) {
-    fab.title = tab === 'feed' ? 'Publicar no Feed' : tab === 'inbox' ? 'Enviar card' : 'Novo card';
-  }
-
   if (tab === 'feed') loadFeedCards();
   if (tab === 'inbox') loadInbox();
-};
-
-window.onFcFab = function() {
-  if (_fcCurrentTab === 'feed')   openPublishCard();
-  else if (_fcCurrentTab === 'inbox') openSendCard();
-  else openAddFlashcard();
 };
 
 // ── Feed Global ──────────────────────────────────────────────────────────────
@@ -1484,11 +1473,16 @@ window.loadFeedCards = async function() {
       const liked = uid && (c.likes||[]).includes(uid);
       const isOwn = uid && c.authorId === uid;
       const date  = c.createdAt?.toDate?.()?.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) || '';
+      const authorName = escapeHtml(c.authorName || 'Anônimo');
+      const avatarLetter = (c.authorName || 'A')[0].toUpperCase();
       return `
       <div class="sn-card" style="--sn-bg:${col.bg};--sn-text:${col.text};--sn-fold:${col.fold};--sn-sub:${col.fold}">
-        <div class="sn-top">
-          <span class="sn-subject">${escapeHtml(c.authorName || 'Anônimo')}</span>
-          <span style="font-size:10px;color:rgba(255,255,255,0.7)">${date}</span>
+        <div class="sn-top" style="display:flex;align-items:center;gap:7px;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:6px;min-width:0">
+            <div class="fc-author-avatar">${avatarLetter}</div>
+            <span class="fc-author-name">${authorName}${isOwn ? ' <span class="fc-own-badge">você</span>' : ''}</span>
+          </div>
+          <span style="font-size:10px;color:rgba(255,255,255,0.6);white-space:nowrap;flex-shrink:0">${date}</span>
         </div>
         <div class="sn-body" onclick="flipFeedCard('${d.id}')">
           <div class="sn-front" id="fdf-${d.id}">
