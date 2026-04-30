@@ -786,9 +786,8 @@ function renderDashboard() {
     } else {
       subjProgEl.innerHTML = STATE.subjects.map(s => {
         const sTasks  = STATE.tasks.filter(t => t.subjectId === s.id);
-        if (sTasks.length === 0) return '';
         const sDone   = sTasks.filter(t => t.done).length;
-        const sPct    = Math.round((sDone / sTasks.length) * 100);
+        const sPct    = sTasks.length === 0 ? 0 : Math.round((sDone / sTasks.length) * 100);
         return `
           <div class="db-subj-row">
             <span class="db-subj-dot" style="background:${s.color}"></span>
@@ -796,7 +795,7 @@ function renderDashboard() {
             <div class="db-subj-bar-wrap">
               <div class="db-subj-bar-fill" style="width:${sPct}%;background:${s.color}"></div>
             </div>
-            <span class="db-subj-pct">${sPct}%</span>
+            <span class="db-subj-pct">${sTasks.length === 0 ? '—' : sPct + '%'}</span>
           </div>`;
       }).join('');
     }
@@ -829,11 +828,16 @@ function renderDashboard() {
         const urgCls = diff === 0 ? 'db-exam-urgent' : diff <= 3 ? 'db-exam-soon' : diff <= 7 ? 'db-exam-week' : 'db-exam-ok';
         const subjectColor = e.subjectColor || 'var(--accent)';
 
+        // Linha de assuntos: usa notes se existir, senão nada
+        const subLine = e.notes
+          ? `<span class="db-exam-notes" style="color:${subjectColor}">${escapeHtml(e.notes)}</span>`
+          : '';
+
         return `
           <div class="db-exam-card" style="border-left: 3px solid ${subjectColor}">
             <div class="db-exam-info">
               <span class="db-exam-title">${escapeHtml(e.title)}</span>
-              ${e.subjectName ? `<span class="db-exam-sub" style="color:${subjectColor}">${escapeHtml(e.subjectName)}</span>` : ''}
+              ${subLine}
             </div>
             <div class="db-exam-right">
               <span class="db-exam-badge ${urgCls}">${dateLabel}</span>
