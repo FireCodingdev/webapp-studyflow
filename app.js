@@ -759,7 +759,7 @@ function renderDashboard() {
         : `Começa em ${hLeft>0?hLeft+'h ':''}${mLeft}min`;
       const prog = isLive ? Math.round(((nowMin-startMin)/(endMin-startMin))*100) : 0;
       focusEl.innerHTML = `
-        <div class="db-focus-card" style="border-left:3px solid ${targetCls.subjectColor}">
+        <div class="db-focus-card" style="border-left:3px solid ${STATE.subjects.find(s=>s.id===targetCls.subjectId)?.color||targetCls.subjectColor||'var(--accent)'}">
           <div class="db-focus-badge ${isLive?'live':'next'}">${isLive?'AO VIVO':'PRÓXIMA'}</div>
           <div class="db-focus-name">${targetCls.subjectName}</div>
           <div class="db-focus-meta">
@@ -767,7 +767,7 @@ function renderDashboard() {
             ${targetCls.room ? `<span>· ${targetCls.room}</span>` : ''}
             <span class="db-focus-time">· ${timeLabel}</span>
           </div>
-          ${isLive ? `<div class="db-focus-bar"><div class="db-focus-fill" style="width:${prog}%;background:${targetCls.subjectColor}"></div></div>` : ''}
+          ${isLive ? `<div class="db-focus-bar"><div class="db-focus-fill" style="width:${prog}%;background:${STATE.subjects.find(s=>s.id===targetCls.subjectId)?.color||targetCls.subjectColor||'var(--accent)'}"></div></div>` : ''}
         </div>`;
     } else {
       focusEl.innerHTML = '';
@@ -824,7 +824,9 @@ function renderDashboard() {
           d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' })
            .replace(/\./g, '');
 
-        const subjectColor = e.subjectColor || 'var(--accent)';
+        // Sempre busca a cor atual da matéria pelo id — ignora a cor snapshottada na tarefa
+        const liveSubject = STATE.subjects.find(s => s.id === e.subjectId);
+        const subjectColor = liveSubject?.color || e.subjectColor || 'var(--accent)';
 
         const notesLine = e.notes
           ? `<div class="exam-card-notes" style="color:${subjectColor}">${escapeHtml(e.notes)}</div>`
@@ -861,7 +863,8 @@ function renderDashboard() {
       const bySubj = {};
       due.forEach(c => {
         const k = c.subjectId || '__none__';
-        if (!bySubj[k]) bySubj[k] = { name: c.subjectName || 'Sem matéria', color: c.subjectColor || 'var(--text2)', count: 0 };
+        const fcLiveSubj = STATE.subjects.find(s => s.id === c.subjectId);
+        if (!bySubj[k]) bySubj[k] = { name: c.subjectName || 'Sem matéria', color: fcLiveSubj?.color || c.subjectColor || 'var(--text2)', count: 0 };
         bySubj[k].count++;
       });
       fcEl.innerHTML = `
@@ -1032,10 +1035,12 @@ function renderClassCard(cls, nowMinArg, selArg, todayArg) {
 
   const isLive   = sel === todayDow && nowMin >= startMin && nowMin < endMin;
   const progress = isLive ? Math.round(((nowMin - startMin) / dur) * 100) : null;
+  const liveSubj = STATE.subjects.find(s => s.id === cls.subjectId);
+  const clsColor = liveSubj?.color || cls.subjectColor || 'var(--accent)';
 
   return `
     <div class="cls-card ${isLive ? 'cls-card--live' : ''}">
-      <div class="cls-card-bar" style="background:${cls.subjectColor}"></div>
+      <div class="cls-card-bar" style="background:${clsColor}"></div>
       <div class="cls-card-body">
         <div class="cls-card-row">
           <span class="cls-card-name">${cls.subjectName}</span>
@@ -1051,7 +1056,7 @@ function renderClassCard(cls, nowMinArg, selArg, todayArg) {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
             ${cls.room}</span>` : ''}
         </div>
-        ${isLive ? `<div class="cls-progress"><div class="cls-progress-fill" style="width:${progress}%;background:${cls.subjectColor}"></div></div>` : ''}
+        ${isLive ? `<div class="cls-progress"><div class="cls-progress-fill" style="width:${progress}%;background:${clsColor}"></div></div>` : ''}
       </div>
       <button class="cls-del-btn" onclick="deleteClass('${cls.id}')" title="Remover">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
@@ -1105,7 +1110,7 @@ function renderTaskCard(task) {
           <div class="task-title" style="${task.done ? 'text-decoration:line-through;color:var(--text2)' : ''}">${escapeHtml(task.title)}</div>
           ${task.notes ? `<div style="font-size:12px;color:var(--text2);margin-top:3px">${escapeHtml(task.notes)}</div>` : ''}
           <div class="task-meta">
-            ${task.subjectName ? `<span class="tag tag-subject" style="background:${task.subjectColor}22;color:${task.subjectColor}">${escapeHtml(task.subjectName)}</span>` : ''}
+            ${task.subjectName ? `<span class="tag tag-subject" style="background:${(STATE.subjects.find(s=>s.id===task.subjectId)?.color||task.subjectColor||'var(--accent)')}22;color:${STATE.subjects.find(s=>s.id===task.subjectId)?.color||task.subjectColor||'var(--accent)'}">${escapeHtml(task.subjectName)}</span>` : ''}
             ${task.type === 'exam' ? `<span class="tag tag-exam">${typeLabels[task.type]}</span>` : ''}
             ${deadlineLabel ? `<span class="tag ${isUrgent(task.deadline) ? 'tag-deadline' : 'tag-ok'}">${deadlineLabel}</span>` : ''}
           </div>
@@ -1263,7 +1268,7 @@ function renderFlashcards() {
     <div class="fc-card ${isDue ? 'fc-due' : ''}" id="fc-${c.id}">
       <div class="fc-card-inner" onclick="flipCard('${c.id}')">
         <div class="fc-front">
-          ${c.subjectName ? `<span class="fc-subject-tag" style="background:${c.subjectColor}22;color:${c.subjectColor}">${escapeHtml(c.subjectName)}</span>` : ''}
+          ${c.subjectName ? `<span class="fc-subject-tag" style="background:${(STATE.subjects.find(s=>s.id===c.subjectId)?.color||c.subjectColor||'var(--accent)')}22;color:${STATE.subjects.find(s=>s.id===c.subjectId)?.color||c.subjectColor||'var(--accent)'}">${escapeHtml(c.subjectName)}</span>` : ''}
           ${isDue ? '<span class="fc-due-badge">Revisar</span>' : ''}
           <p class="fc-text">${escapeHtml(c.front)}</p>
           <span class="fc-hint">Toque para revelar</span>
