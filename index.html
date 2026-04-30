@@ -154,11 +154,17 @@
 
       <div id="page-dashboard" class="page active">
         <div class="page-content">
+
+          <!-- Hero -->
           <div class="dashboard-hero">
             <div id="greeting-text" class="greeting-kicker">Olá!</div>
-            <h1 class="greeting-title">Pronto para estudar?</h1>
+            <h1 class="greeting-title" id="greeting-title">Pronto para estudar?</h1>
           </div>
-          
+
+          <!-- Foco do dia: próxima aula -->
+          <div id="db-focus-block" class="db-focus-block"></div>
+
+          <!-- Stats row -->
           <div class="stats-grid">
             <div class="stat-card">
               <div class="stat-icon stat-i-classes">
@@ -189,17 +195,34 @@
             </div>
           </div>
 
-          <div class="dashboard-widgets">
-            <div class="widget">
-              <h3>Progresso Geral</h3>
-              <div id="dashboard-pie"></div>
+          <!-- Progresso por matéria -->
+          <div class="section-block">
+            <div class="section-header">
+              <h3>Progresso por Matéria</h3>
+              <span id="db-overall-pct" class="db-overall-pct"></span>
             </div>
-            <div class="widget">
-              <h3>Próximo Grande Evento</h3>
-              <div id="dashboard-next-exam"></div>
-            </div>
+            <div id="db-subject-progress" class="db-subject-progress"></div>
           </div>
 
+          <!-- Provas agendadas -->
+          <div class="section-block">
+            <div class="section-header">
+              <h3>Provas Agendadas</h3>
+              <button class="text-btn" onclick="navigateTo('tasks')">Ver todas</button>
+            </div>
+            <div id="db-exams-list" class="db-exams-list"></div>
+          </div>
+
+          <!-- Flashcards para revisar -->
+          <div class="section-block">
+            <div class="section-header">
+              <h3>Flashcards para Revisar</h3>
+              <button class="text-btn" onclick="navigateTo('flashcards')">Revisar</button>
+            </div>
+            <div id="db-flashcards-due" class="db-flashcards-due"></div>
+          </div>
+
+          <!-- Aulas de Hoje -->
           <div class="section-block">
             <div class="section-header">
               <h3>Aulas de Hoje</h3>
@@ -208,6 +231,7 @@
             <div id="today-classes" class="list-container"></div>
           </div>
 
+          <!-- Próximas Atividades -->
           <div class="section-block">
             <div class="section-header">
               <h3>Próximas Atividades</h3>
@@ -215,6 +239,7 @@
             </div>
             <div id="upcoming-tasks" class="list-container"></div>
           </div>
+
         </div>
         <button class="fab" onclick="openAddTask()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>

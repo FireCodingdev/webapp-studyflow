@@ -699,85 +699,165 @@ window.saveTask = async function() {
 
 // ===== RENDER DASHBOARD =====
 function renderDashboard() {
-  const today = new Date().getDay();
+  const now = new Date();
+  const today = now.getDay();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+
   const todayClasses = STATE.classes.filter(c => c.day === today)
     .sort((a, b) => a.start.localeCompare(b.start));
   const pendingTasks = STATE.tasks.filter(t => !t.done);
-  const doneTasks = STATE.tasks.filter(t => t.done);
-  const exams = pendingTasks.filter(t => t.type === 'exam');
-  const upcomingTasks = pendingTasks
+  const doneTasks   = STATE.tasks.filter(t => t.done);
+  const exams       = pendingTasks.filter(t => t.type === 'exam' && t.deadline);
+  const upcomingTasks = [...pendingTasks]
     .sort((a, b) => (a.deadline || '9999-12-31') < (b.deadline || '9999-12-31') ? -1 : 1)
     .slice(0, 3);
 
+  // ── Stats ──────────────────────────────────────────────
   document.getElementById('stat-classes').textContent = todayClasses.length;
-  document.getElementById('stat-tasks').textContent = pendingTasks.length;
-  document.getElementById('stat-exams').textContent = exams.length;
+  document.getElementById('stat-tasks').textContent   = pendingTasks.length;
+  document.getElementById('stat-exams').textContent   = exams.length;
 
-  // --- Pie Chart ---
-  const total = STATE.tasks.length;
-  const doneCount = doneTasks.length;
-  const pendingCount = pendingTasks.length;
-  const pieEl = document.getElementById('dashboard-pie');
-  if (pieEl) {
-    if (total === 0) {
-      pieEl.innerHTML = `<div class="pie-empty">Nenhuma atividade ainda</div>`;
+  // ── Greeting subtitle ──────────────────────────────────
+  const titleEl = document.getElementById('greeting-title');
+  if (titleEl) {
+    if (todayClasses.length > 0) {
+      const next = todayClasses.find(c => {
+        const [sh, sm] = c.start.split(':').map(Number);
+        return sh * 60 + sm > nowMin;
+      });
+      if (next) titleEl.textContent = `Próxima aula: ${next.subjectName}`;
+      else if (todayClasses.some(c => { const [sh,sm]=c.start.split(':').map(Number); const [eh,em]=c.end.split(':').map(Number); return nowMin>=sh*60+sm&&nowMin<eh*60+em; }))
+        titleEl.textContent = 'Você tem uma aula agora!';
+      else titleEl.textContent = 'Todas as aulas de hoje concluídas!';
     } else {
-      const pct = Math.round((doneCount / total) * 100);
-      const angle = (doneCount / total) * 360;
-      const r = 38, cx = 50, cy = 50;
-      const rad = (angle - 90) * Math.PI / 180;
-      const x = cx + r * Math.cos(rad);
-      const y = cy + r * Math.sin(rad);
-      const largeArc = angle > 180 ? 1 : 0;
-      const slicePath = angle >= 360
-        ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--accent)"/>`
-        : angle === 0
-          ? ''
-          : `<path d="M${cx},${cy-r} A${r},${r} 0 ${largeArc},1 ${x.toFixed(2)},${y.toFixed(2)} Z" fill="var(--accent)"/>`;
-      pieEl.innerHTML = `
-        <div class="pie-chart-wrap">
-          <svg viewBox="0 0 100 100" width="90" height="90">
-            <circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--surface2)"/>
-            ${slicePath}
-            <circle cx="${cx}" cy="${cy}" r="24" fill="var(--surface)"/>
-            <text x="${cx}" y="${cy+1}" text-anchor="middle" dominant-baseline="middle" font-size="14" font-weight="700" fill="var(--text)">${pct}%</text>
-          </svg>
-          <div class="pie-legend">
-            <div class="pie-leg-item"><span class="pie-dot" style="background:var(--accent)"></span><span>${doneCount} concluída${doneCount !== 1 ? 's' : ''}</span></div>
-            <div class="pie-leg-item"><span class="pie-dot" style="background:var(--surface2)"></span><span>${pendingCount} pendente${pendingCount !== 1 ? 's' : ''}</span></div>
+      titleEl.textContent = 'Pronto para estudar?';
+    }
+  }
+
+  // ── Foco do dia ────────────────────────────────────────
+  const focusEl = document.getElementById('db-focus-block');
+  if (focusEl) {
+    const nextCls = todayClasses.find(c => {
+      const [sh, sm] = c.start.split(':').map(Number);
+      return sh * 60 + sm > nowMin;
+    });
+    const liveCls = todayClasses.find(c => {
+      const [sh,sm] = c.start.split(':').map(Number);
+      const [eh,em] = c.end.split(':').map(Number);
+      return nowMin >= sh*60+sm && nowMin < eh*60+em;
+    });
+    const targetCls = liveCls || nextCls;
+    if (targetCls) {
+      const [sh,sm] = targetCls.start.split(':').map(Number);
+      const [eh,em] = targetCls.end.split(':').map(Number);
+      const startMin = sh*60+sm, endMin = eh*60+em;
+      const isLive = !!liveCls;
+      const minsLeft = isLive ? endMin - nowMin : startMin - nowMin;
+      const hLeft = Math.floor(minsLeft/60), mLeft = minsLeft%60;
+      const timeLabel = isLive
+        ? `Termina em ${hLeft>0?hLeft+'h ':''}${mLeft}min`
+        : `Começa em ${hLeft>0?hLeft+'h ':''}${mLeft}min`;
+      const prog = isLive ? Math.round(((nowMin-startMin)/(endMin-startMin))*100) : 0;
+      focusEl.innerHTML = `
+        <div class="db-focus-card" style="border-left:3px solid ${targetCls.subjectColor}">
+          <div class="db-focus-badge ${isLive?'live':'next'}">${isLive?'AO VIVO':'PRÓXIMA'}</div>
+          <div class="db-focus-name">${targetCls.subjectName}</div>
+          <div class="db-focus-meta">
+            <span>${targetCls.start} – ${targetCls.end}</span>
+            ${targetCls.room ? `<span>· ${targetCls.room}</span>` : ''}
+            <span class="db-focus-time">· ${timeLabel}</span>
           </div>
+          ${isLive ? `<div class="db-focus-bar"><div class="db-focus-fill" style="width:${prog}%;background:${targetCls.subjectColor}"></div></div>` : ''}
+        </div>`;
+    } else {
+      focusEl.innerHTML = '';
+    }
+  }
+
+  // ── Progresso por matéria ──────────────────────────────
+  const subjProgEl = document.getElementById('db-subject-progress');
+  const overallEl  = document.getElementById('db-overall-pct');
+  if (subjProgEl) {
+    const total = STATE.tasks.length;
+    const doneCount = doneTasks.length;
+    if (overallEl) overallEl.textContent = total > 0 ? `${Math.round((doneCount/total)*100)}% geral` : '';
+    if (STATE.subjects.length === 0 || total === 0) {
+      subjProgEl.innerHTML = `<div class="db-empty-small">Nenhuma atividade ainda</div>`;
+    } else {
+      subjProgEl.innerHTML = STATE.subjects.map(s => {
+        const sTasks  = STATE.tasks.filter(t => t.subjectId === s.id);
+        if (sTasks.length === 0) return '';
+        const sDone   = sTasks.filter(t => t.done).length;
+        const sPct    = Math.round((sDone / sTasks.length) * 100);
+        return `
+          <div class="db-subj-row">
+            <span class="db-subj-dot" style="background:${s.color}"></span>
+            <span class="db-subj-name">${escapeHtml(s.name)}</span>
+            <div class="db-subj-bar-wrap">
+              <div class="db-subj-bar-fill" style="width:${sPct}%;background:${s.color}"></div>
+            </div>
+            <span class="db-subj-pct">${sPct}%</span>
+          </div>`;
+      }).join('');
+    }
+  }
+
+  // ── Provas agendadas ────────────────────────────────────
+  const examsEl = document.getElementById('db-exams-list');
+  if (examsEl) {
+    const todayStr = now.toISOString().slice(0,10);
+    const sorted = exams
+      .sort((a,b) => a.deadline.localeCompare(b.deadline));
+    if (sorted.length === 0) {
+      examsEl.innerHTML = `<div class="db-empty-small">Nenhuma prova agendada</div>`;
+    } else {
+      examsEl.innerHTML = sorted.map(e => {
+        const d = new Date(e.deadline + 'T00:00:00');
+        const todayD = new Date(); todayD.setHours(0,0,0,0);
+        const diff = Math.round((d - todayD) / (1000*60*60*24));
+        const diffLabel = diff === 0 ? 'HOJE' : diff === 1 ? 'Amanhã' : diff < 0 ? `${Math.abs(diff)}d atrás` : `${diff}d`;
+        const urgCls = diff <= 0 ? 'db-exam-urgent' : diff <= 3 ? 'db-exam-soon' : diff <= 7 ? 'db-exam-week' : 'db-exam-ok';
+        return `
+          <div class="db-exam-row">
+            <div class="db-exam-info">
+              <span class="db-exam-title">${escapeHtml(e.title)}</span>
+              ${e.subjectName ? `<span class="db-exam-sub" style="color:${e.subjectColor}">${escapeHtml(e.subjectName)}</span>` : ''}
+            </div>
+            <span class="db-exam-badge ${urgCls}">${diffLabel}</span>
+          </div>`;
+      }).join('');
+    }
+  }
+
+  // ── Flashcards para revisar ────────────────────────────
+  const fcEl = document.getElementById('db-flashcards-due');
+  if (fcEl) {
+    const todayStr = now.toISOString().slice(0,10);
+    const due = STATE.flashcards.filter(c => c.nextReview <= todayStr);
+    if (STATE.flashcards.length === 0) {
+      fcEl.innerHTML = `<div class="db-empty-small">Nenhum flashcard criado</div>`;
+    } else if (due.length === 0) {
+      fcEl.innerHTML = `<div class="db-fc-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M20 6L9 17l-5-5"/></svg> Em dia! ${STATE.flashcards.length} card${STATE.flashcards.length!==1?'s':''} no total</div>`;
+    } else {
+      const bySubj = {};
+      due.forEach(c => {
+        const k = c.subjectId || '__none__';
+        if (!bySubj[k]) bySubj[k] = { name: c.subjectName || 'Sem matéria', color: c.subjectColor || 'var(--text2)', count: 0 };
+        bySubj[k].count++;
+      });
+      fcEl.innerHTML = `
+        <div class="db-fc-summary">
+          <span class="db-fc-count">${due.length}</span> card${due.length!==1?'s':''} para revisar hoje
+        </div>
+        <div class="db-fc-subjects">
+          ${Object.values(bySubj).map(s => `
+            <span class="db-fc-chip" style="background:${s.color}22;color:${s.color}">${s.count}× ${s.name}</span>
+          `).join('')}
         </div>`;
     }
   }
 
-  // --- Next Exam Countdown ---
-  const nextExamEl = document.getElementById('dashboard-next-exam');
-  if (nextExamEl) {
-    const upcoming = exams
-      .filter(e => e.deadline)
-      .sort((a, b) => a.deadline.localeCompare(b.deadline));
-    if (upcoming.length === 0) {
-      nextExamEl.innerHTML = `<div class="next-exam-empty">📅 Nenhuma prova agendada</div>`;
-    } else {
-      const exam = upcoming[0];
-      const d = new Date(exam.deadline + 'T00:00:00');
-      const todayD = new Date(); todayD.setHours(0,0,0,0);
-      const diff = Math.round((d - todayD) / (1000*60*60*24));
-      const diffLabel = diff === 0 ? 'HOJE!' : diff === 1 ? 'Amanhã' : `Em ${diff} dias`;
-      const urgentClass = diff <= 2 ? 'urgent' : diff <= 7 ? 'soon' : '';
-      nextExamEl.innerHTML = `
-        <div class="next-exam-card ${urgentClass}">
-          <div class="next-exam-icon">📝</div>
-          <div class="next-exam-info">
-            <div class="next-exam-label">Próxima Prova</div>
-            <div class="next-exam-title">${exam.title}</div>
-            ${exam.subjectName ? `<div class="next-exam-sub" style="color:${exam.subjectColor}">${exam.subjectName}</div>` : ''}
-          </div>
-          <div class="next-exam-countdown ${urgentClass}">${diffLabel}</div>
-        </div>`;
-    }
-  }
-
+  // ── Aulas de hoje ──────────────────────────────────────
   const classesEl = document.getElementById('today-classes');
   classesEl.innerHTML = todayClasses.length === 0 ? `
     <div class="empty-state">
@@ -786,6 +866,7 @@ function renderDashboard() {
       <button onclick="navigateTo('schedule')">Adicionar aulas</button>
     </div>` : todayClasses.map(cls => renderClassCard(cls)).join('');
 
+  // ── Próximas atividades ────────────────────────────────
   const tasksEl = document.getElementById('upcoming-tasks');
   tasksEl.innerHTML = upcomingTasks.length === 0 ? `
     <div class="empty-state">
