@@ -13,6 +13,15 @@ import { initIA } from './ia.js';
 import { initClassroom, renderPostsClassroom } from './classroom.js';
 
 // ===== STATE =====
+// Helper: busca cor atual da matéria por id, com fallback por nome
+function getSubjectColor(subjectId, subjectName, fallback) {
+  const byId = STATE.subjects.find(s => s.id === subjectId);
+  if (byId) return byId.color;
+  const byName = STATE.subjects.find(s => s.name === subjectName);
+  if (byName) return byName.color;
+  return fallback || 'var(--accent)';
+}
+
 const STATE = {
   subjects: [],
   classes: [],
@@ -759,7 +768,7 @@ function renderDashboard() {
         : `Começa em ${hLeft>0?hLeft+'h ':''}${mLeft}min`;
       const prog = isLive ? Math.round(((nowMin-startMin)/(endMin-startMin))*100) : 0;
       focusEl.innerHTML = `
-        <div class="db-focus-card" style="border-left:3px solid ${STATE.subjects.find(s=>s.id===targetCls.subjectId)?.color||targetCls.subjectColor||'var(--accent)'}">
+        <div class="db-focus-card" style="border-left:3px solid ${getSubjectColor(targetCls.subjectId, targetCls.subjectName, targetCls.subjectColor)}">
           <div class="db-focus-badge ${isLive?'live':'next'}">${isLive?'AO VIVO':'PRÓXIMA'}</div>
           <div class="db-focus-name">${targetCls.subjectName}</div>
           <div class="db-focus-meta">
@@ -767,7 +776,7 @@ function renderDashboard() {
             ${targetCls.room ? `<span>· ${targetCls.room}</span>` : ''}
             <span class="db-focus-time">· ${timeLabel}</span>
           </div>
-          ${isLive ? `<div class="db-focus-bar"><div class="db-focus-fill" style="width:${prog}%;background:${STATE.subjects.find(s=>s.id===targetCls.subjectId)?.color||targetCls.subjectColor||'var(--accent)'}"></div></div>` : ''}
+          ${isLive ? `<div class="db-focus-bar"><div class="db-focus-fill" style="width:${prog}%;background:${getSubjectColor(targetCls.subjectId, targetCls.subjectName, targetCls.subjectColor)}"></div></div>` : ''}
         </div>`;
     } else {
       focusEl.innerHTML = '';
@@ -825,8 +834,7 @@ function renderDashboard() {
            .replace(/\./g, '');
 
         // Sempre busca a cor atual da matéria pelo id — ignora a cor snapshottada na tarefa
-        const liveSubject = STATE.subjects.find(s => s.id === e.subjectId);
-        const subjectColor = liveSubject?.color || e.subjectColor || 'var(--accent)';
+        const subjectColor = getSubjectColor(e.subjectId, e.subjectName, e.subjectColor);
 
         const notesLine = e.notes
           ? `<div class="exam-card-notes" style="color:${subjectColor}">${escapeHtml(e.notes)}</div>`
@@ -863,8 +871,7 @@ function renderDashboard() {
       const bySubj = {};
       due.forEach(c => {
         const k = c.subjectId || '__none__';
-        const fcLiveSubj = STATE.subjects.find(s => s.id === c.subjectId);
-        if (!bySubj[k]) bySubj[k] = { name: c.subjectName || 'Sem matéria', color: fcLiveSubj?.color || c.subjectColor || 'var(--text2)', count: 0 };
+        if (!bySubj[k]) bySubj[k] = { name: c.subjectName || 'Sem matéria', color: getSubjectColor(c.subjectId, c.subjectName, c.subjectColor || 'var(--text2)'), count: 0 };
         bySubj[k].count++;
       });
       fcEl.innerHTML = `
@@ -1035,8 +1042,7 @@ function renderClassCard(cls, nowMinArg, selArg, todayArg) {
 
   const isLive   = sel === todayDow && nowMin >= startMin && nowMin < endMin;
   const progress = isLive ? Math.round(((nowMin - startMin) / dur) * 100) : null;
-  const liveSubj = STATE.subjects.find(s => s.id === cls.subjectId);
-  const clsColor = liveSubj?.color || cls.subjectColor || 'var(--accent)';
+  const clsColor = getSubjectColor(cls.subjectId, cls.subjectName, cls.subjectColor);
 
   return `
     <div class="cls-card ${isLive ? 'cls-card--live' : ''}">
@@ -1110,7 +1116,7 @@ function renderTaskCard(task) {
           <div class="task-title" style="${task.done ? 'text-decoration:line-through;color:var(--text2)' : ''}">${escapeHtml(task.title)}</div>
           ${task.notes ? `<div style="font-size:12px;color:var(--text2);margin-top:3px">${escapeHtml(task.notes)}</div>` : ''}
           <div class="task-meta">
-            ${task.subjectName ? `<span class="tag tag-subject" style="background:${(STATE.subjects.find(s=>s.id===task.subjectId)?.color||task.subjectColor||'var(--accent)')}22;color:${STATE.subjects.find(s=>s.id===task.subjectId)?.color||task.subjectColor||'var(--accent)'}">${escapeHtml(task.subjectName)}</span>` : ''}
+            ${task.subjectName ? `<span class="tag tag-subject" style="background:${getSubjectColor(task.subjectId, task.subjectName, task.subjectColor)}22;color:${getSubjectColor(task.subjectId, task.subjectName, task.subjectColor)}">${escapeHtml(task.subjectName)}</span>` : ''}
             ${task.type === 'exam' ? `<span class="tag tag-exam">${typeLabels[task.type]}</span>` : ''}
             ${deadlineLabel ? `<span class="tag ${isUrgent(task.deadline) ? 'tag-deadline' : 'tag-ok'}">${deadlineLabel}</span>` : ''}
           </div>
@@ -1268,7 +1274,7 @@ function renderFlashcards() {
     <div class="fc-card ${isDue ? 'fc-due' : ''}" id="fc-${c.id}">
       <div class="fc-card-inner" onclick="flipCard('${c.id}')">
         <div class="fc-front">
-          ${c.subjectName ? `<span class="fc-subject-tag" style="background:${(STATE.subjects.find(s=>s.id===c.subjectId)?.color||c.subjectColor||'var(--accent)')}22;color:${STATE.subjects.find(s=>s.id===c.subjectId)?.color||c.subjectColor||'var(--accent)'}">${escapeHtml(c.subjectName)}</span>` : ''}
+          ${c.subjectName ? `<span class="fc-subject-tag" style="background:${getSubjectColor(c.subjectId, c.subjectName, c.subjectColor)}22;color:${getSubjectColor(c.subjectId, c.subjectName, c.subjectColor)}">${escapeHtml(c.subjectName)}</span>` : ''}
           ${isDue ? '<span class="fc-due-badge">Revisar</span>' : ''}
           <p class="fc-text">${escapeHtml(c.front)}</p>
           <span class="fc-hint">Toque para revelar</span>
