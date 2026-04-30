@@ -1,43 +1,161 @@
 // functions/index.js
-// Firebase Cloud Function que serve como proxy seguro para a API Gemini.
-// A chave fica APENAS aqui no servidor — nunca no código do cliente.
+// Firebase Cloud Functions — proxy seguro para Gemini e Google Classroom OAuth.
+// As chaves ficam APENAS aqui no servidor — nunca no código do cliente.
 //
 // Deploy: firebase deploy --only functions
 
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const { getAuth } = require('firebase-admin/auth');
+const { getFirestore } = require('firebase-admin/firestore');
 const { initializeApp } = require('firebase-admin/app');
 
 initializeApp();
 
-// A chave é armazenada como secret do Firebase (criptografada, nunca exposta)
-const geminiKey = defineSecret('GEMINI_API_KEY');
+// Secrets armazenadas no Firebase (criptografadas, nunca expostas)
+const geminiKey        = defineSecret('GEMINI_API_KEY');
+const classroomSecret  = defineSecret('CLASSROOM_CLIENT_SECRET');
 
 const GEMINI_MODEL = 'gemini-2.5-flash';
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
-exports.geminiProxy = onRequest(
+const CLASSROOM_CLIENT_ID = '92968084905-1ete8rjlfs6e3uo3pj4h351bdm8ak947.apps.googleusercontent.com';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// classroomToken — troca o authorization code por access_token + refresh_token
+// e renova o access_token quando expirado.
+// ─────────────────────────────────────────────────────────────────────────────
+exports.classroomToken = onRequest(
   {
-    secrets: [geminiKey],   // injeta o secret no ambiente da função
-    cors: true,             // permite chamadas do PWA
-    maxInstances: 10,       // limite de instâncias simultâneas
+    secrets: [classroomSecret],
+    cors: true,
+    maxInstances: 10,
   },
   async (req, res) => {
 
-    // ── 1. Só aceita POST ──────────────────────────────────────────────────
+    // 1. Só aceita POST
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Método não permitido' });
     }
 
-    // ── 2. Valida autenticação Firebase do usuário ─────────────────────────
-    // Garante que só usuários logados no seu app podem usar a IA
+    // 2. Valida autenticação Firebase
     const authHeader = req.headers.authorization || '';
     const idToken    = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!idToken) return res.status(401).json({ error: 'Token de autenticação ausente' });
 
-    if (!idToken) {
-      return res.status(401).json({ error: 'Token de autenticação ausente' });
+    let uid;
+    try {
+      const decoded = await getAuth().verifyIdToken(idToken);
+      uid = decoded.uid;
+    } catch {
+      return res.status(401).json({ error: 'Token inválido ou expirado' });
     }
+
+    const { action, code, code_verifier, redirect_uri, refresh_token } = req.body;
+    const secret = classroomSecret.value();
+
+    // ── Ação: trocar code por token (primeiro login) ───────────────────────
+    if (action === 'exchange') {
+      if (!code || !code_verifier || !redirect_uri) {
+        return res.status(400).json({ error: 'code, code_verifier e redirect_uri são obrigatórios' });
+      }
+
+      let tokenData;
+      try {
+        const resp = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            code,
+            client_id:     CLASSROOM_CLIENT_ID,
+            client_secret: secret,
+            redirect_uri,
+            grant_type:    'authorization_code',
+            code_verifier,
+          }),
+        });
+        tokenData = await resp.json();
+        if (!resp.ok || !tokenData.access_token) {
+          console.error('[classroomToken] exchange falhou:', tokenData);
+          return res.status(400).json({ error: tokenData.error_description || tokenData.error || 'Falha na troca de token' });
+        }
+      } catch (err) {
+        return res.status(502).json({ error: `Erro de rede: ${err.message}` });
+      }
+
+      // Salva no Firestore
+      const expiresAt = Date.now() + (tokenData.expires_in * 1000);
+      const db = getFirestore();
+      await db.collection('users').doc(uid).set({
+        classroom: {
+          access_token:  tokenData.access_token,
+          refresh_token: tokenData.refresh_token || null,
+          expiresAt,
+          connectedAt: new Date().toISOString(),
+        }
+      }, { merge: true });
+
+      return res.status(200).json({ access_token: tokenData.access_token, expiresAt });
+    }
+
+    // ── Ação: renovar token com refresh_token ─────────────────────────────
+    if (action === 'refresh') {
+      if (!refresh_token) {
+        return res.status(400).json({ error: 'refresh_token é obrigatório' });
+      }
+
+      let tokenData;
+      try {
+        const resp = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id:     CLASSROOM_CLIENT_ID,
+            client_secret: secret,
+            refresh_token,
+            grant_type:    'refresh_token',
+          }),
+        });
+        tokenData = await resp.json();
+        if (!resp.ok || !tokenData.access_token) {
+          return res.status(400).json({ error: tokenData.error_description || 'Falha ao renovar token' });
+        }
+      } catch (err) {
+        return res.status(502).json({ error: `Erro de rede: ${err.message}` });
+      }
+
+      const expiresAt = Date.now() + (tokenData.expires_in * 1000);
+      const db = getFirestore();
+      await db.collection('users').doc(uid).update({
+        'classroom.access_token': tokenData.access_token,
+        'classroom.expiresAt':    expiresAt,
+      });
+
+      return res.status(200).json({ access_token: tokenData.access_token, expiresAt });
+    }
+
+    return res.status(400).json({ error: 'action deve ser "exchange" ou "refresh"' });
+  }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// geminiProxy — proxy seguro para a API Gemini (existente, sem alterações)
+// ─────────────────────────────────────────────────────────────────────────────
+exports.geminiProxy = onRequest(
+  {
+    secrets: [geminiKey],
+    cors: true,
+    maxInstances: 10,
+  },
+  async (req, res) => {
+
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Método não permitido' });
+    }
+
+    const authHeader = req.headers.authorization || '';
+    const idToken    = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!idToken) return res.status(401).json({ error: 'Token de autenticação ausente' });
 
     try {
       await getAuth().verifyIdToken(idToken);
@@ -45,19 +163,16 @@ exports.geminiProxy = onRequest(
       return res.status(401).json({ error: 'Token inválido ou expirado' });
     }
 
-    // ── 3. Valida o body da requisição ─────────────────────────────────────
     const { imageBase64, mimeType, mode = 'schedule' } = req.body;
 
     if (!imageBase64 || !mimeType) {
       return res.status(400).json({ error: 'imageBase64 e mimeType são obrigatórios' });
     }
 
-    // Limita tamanho da imagem (evita abuso: ~5MB em base64 ≈ 6.8MB string)
     if (imageBase64.length > 7_000_000) {
       return res.status(413).json({ error: 'Imagem muito grande. Use uma foto menor.' });
     }
 
-    // ── 4. Monta e envia a requisição ao Gemini ────────────────────────────
     const SCHEDULE_PROMPT = `
 Você é um assistente especializado em ler cronogramas acadêmicos em imagens.
 Analise esta imagem de cronograma/grade horária e extraia TODAS as informações.
@@ -124,7 +239,7 @@ Regras:
       generationConfig: {
         temperature: 0.1,
         maxOutputTokens: 4096,
-        responseMimeType: 'application/json', // força JSON puro — sem markdown, sem texto
+        responseMimeType: 'application/json',
       },
     };
 
@@ -148,16 +263,13 @@ Regras:
 
     const data = await apiResp.json();
 
-    // gemini-2.5-flash é thinking model: parts[0] pode ser o raciocínio interno (thought: true)
-    // buscamos a primeira part sem a flag thought, que contém o JSON real
     const parts   = data?.candidates?.[0]?.content?.parts || [];
     const rawText = (
-      parts.find(p => !p.thought && p.text)?.text  // part de resposta real
-      ?? parts[parts.length - 1]?.text              // fallback: última part
+      parts.find(p => !p.thought && p.text)?.text
+      ?? parts[parts.length - 1]?.text
       ?? ''
     );
 
-    // Sanitização defensiva (caso responseMimeType seja ignorado por algum motivo)
     const cleaned = rawText
       .replace(/```json\s*/gi, '')
       .replace(/```\s*/gi, '')

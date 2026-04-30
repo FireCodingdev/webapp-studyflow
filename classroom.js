@@ -1,16 +1,7 @@
 // ===== CLASSROOM.JS =====
 // Integração com Google Classroom via OAuth 2.0 Authorization Code + PKCE.
-// O fluxo implícito (response_type=token) foi depreciado pelo Google em 2024
-// e não emite mais tokens — por isso a conexão parava de funcionar.
-// Este arquivo usa o fluxo PKCE, que é o padrão atual e seguro para SPAs.
-//
-// SETUP no Google Cloud Console (único lugar que precisa de configuração):
-//   1. Ative a API "Google Classroom API"
-//   2. Crie credenciais OAuth 2.0 → tipo "Web application"
-//   3. Em "Authorized redirect URIs" adicione a URL EXATA:
-//      https://aplicativo-studyflow-4f501.firebaseapp.com/classroom-callback.html
-//      (ou o domínio que você usa em produção + /classroom-callback.html)
-//   4. O CLIENT_ID já está configurado abaixo — não precisa mudar
+// A client_secret NUNCA fica no frontend — a troca de token é feita via
+// Firebase Function (classroomToken), que mantém a secret segura no servidor.
 
 import { db, auth } from './firebase.js';
 import {
@@ -27,6 +18,9 @@ const CLASSROOM_SCOPES = [
   'https://www.googleapis.com/auth/classroom.coursework.me.readonly',
   'https://www.googleapis.com/auth/classroom.announcements.readonly',
 ].join(' ');
+
+// URL da Firebase Function de proxy (ajuste se seu projeto tiver região diferente)
+const CLASSROOM_TOKEN_FUNCTION = 'https://us-central1-aplicativo-studyflow-4f501.cloudfunctions.net/classroomToken';
 
 // ─── ESTADO INTERNO ───────────────────────────────────────────────────────────
 let _STATE = null;
@@ -45,11 +39,8 @@ export function initClassroom(STATE, hooks) {
 
   window._renderPostsClassroom = async () => {
     if (!uid) return;
-    const snap = await getDoc(doc(db, 'users', uid));
-    const cl = snap?.data()?.classroom;
-    if (cl?.access_token && Date.now() < cl.expiresAt) {
-      renderPostsClassroom(cl.access_token);
-    }
+    const token = await getTokenValido(uid);
+    if (token) renderPostsClassroom(token);
   };
 }
 
@@ -72,10 +63,9 @@ async function conectarClassroom() {
   const uid = auth.currentUser?.uid;
   if (!uid) { _hooks.showToast('Faça login primeiro.'); return; }
 
-  // Gera e salva o verifier para usar no callback
-  const verifier   = gerarVerifier();
-  const challenge  = await gerarChallenge(verifier);
-  const state      = crypto.randomUUID();
+  const verifier  = gerarVerifier();
+  const challenge = await gerarChallenge(verifier);
+  const state     = crypto.randomUUID();
 
   sessionStorage.setItem('cl_verifier', verifier);
   sessionStorage.setItem('cl_state',    state);
@@ -90,8 +80,8 @@ async function conectarClassroom() {
     state,
     code_challenge:        challenge,
     code_challenge_method: 'S256',
-    access_type:           'online',
-    prompt:                'consent',
+    access_type:           'offline',   // garante refresh_token
+    prompt:                'consent',   // força consentimento para receber refresh_token
   });
 
   const popup = window.open(
@@ -100,7 +90,6 @@ async function conectarClassroom() {
     'width=500,height=650,menubar=no,toolbar=no'
   );
 
-  // Recebe o code vindo do classroom-callback.html via postMessage
   window.addEventListener('message', async function handler(e) {
     if (e.origin !== location.origin) return;
     if (e.data?.type !== 'classroom-code') return;
@@ -122,43 +111,36 @@ async function conectarClassroom() {
   });
 }
 
-// Troca o authorization code por um access_token via token endpoint
-// Nota: o fluxo PKCE para SPAs não usa client_secret.
+// ─── TROCA CODE → TOKEN via Firebase Function (secret segura no servidor) ────
 async function trocarCodePorToken(code, uid) {
   const verifier    = sessionStorage.getItem('cl_verifier');
   const redirectUri = `${location.origin}/classroom-callback.html`;
 
   try {
-    const resp = await fetch('https://oauth2.googleapis.com/token', {
+    setBotaoSincronizando(true);
+
+    const idToken = await auth.currentUser.getIdToken();
+    const resp = await fetch(CLASSROOM_TOKEN_FUNCTION, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        action:       'exchange',
         code,
-        client_id:             CLASSROOM_CLIENT_ID,
-        redirect_uri:          redirectUri,
-        grant_type:            'authorization_code',
-        code_verifier:         verifier,
+        code_verifier: verifier,
+        redirect_uri:  redirectUri,
       }),
     });
 
     const data = await resp.json();
 
     if (!resp.ok || !data.access_token) {
-      console.error('[Classroom] Token exchange falhou:', data);
-      // Se falhou por client_secret ausente, instrui o usuário
-      if (data.error === 'invalid_client') {
-        _hooks.showToast('⚠️ Configure o app como "Desktop" no Google Cloud Console para usar PKCE sem secret.');
-      } else {
-        _hooks.showToast(`❌ Falha ao obter token: ${data.error_description || data.error}`);
-      }
+      console.error('[Classroom] exchange falhou:', data);
+      _hooks.showToast(`❌ Falha ao conectar: ${data.error || 'erro desconhecido'}`);
       return;
     }
-
-    const expiresAt = Date.now() + (data.expires_in * 1000);
-    await setDoc(doc(db, 'users', uid),
-      { classroom: { access_token: data.access_token, expiresAt, connectedAt: new Date().toISOString() } },
-      { merge: true }
-    );
 
     // Limpa sessão temporária
     sessionStorage.removeItem('cl_verifier');
@@ -172,23 +154,68 @@ async function trocarCodePorToken(code, uid) {
   } catch (err) {
     console.error('[Classroom] Erro na troca de token:', err);
     _hooks.showToast('❌ Erro ao conectar com o Classroom.');
+  } finally {
+    setBotaoSincronizando(false);
+  }
+}
+
+// ─── RENOVAR TOKEN via Firebase Function ─────────────────────────────────────
+async function renovarToken(uid, refreshToken) {
+  try {
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) return null;
+
+    const resp = await fetch(CLASSROOM_TOKEN_FUNCTION, {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ action: 'refresh', refresh_token: refreshToken }),
+    });
+
+    const data = await resp.json();
+    if (!resp.ok || !data.access_token) return null;
+
+    return data.access_token;
+  } catch {
+    return null;
+  }
+}
+
+// ─── OBTER TOKEN VÁLIDO (com auto-refresh) ────────────────────────────────────
+async function getTokenValido(uid) {
+  try {
+    const snap      = await getDoc(doc(db, 'users', uid));
+    const classroom = snap.data()?.classroom;
+    if (!classroom?.access_token) return null;
+
+    // Token ainda válido (com margem de 2 minutos)
+    if (Date.now() < classroom.expiresAt - 120_000) {
+      return classroom.access_token;
+    }
+
+    // Token expirado — tenta renovar
+    if (classroom.refresh_token) {
+      const novoToken = await renovarToken(uid, classroom.refresh_token);
+      if (novoToken) return novoToken;
+    }
+
+    // Sem refresh_token ou renovação falhou
+    atualizarBotaoClassroom(false, true);
+    return null;
+  } catch {
+    return null;
   }
 }
 
 // ─── SINCRONIZAÇÃO ────────────────────────────────────────────────────────────
 async function sincronizarSeConectado(uid) {
   try {
-    const snap      = await getDoc(doc(db, 'users', uid));
-    const classroom = snap.data()?.classroom;
-    if (!classroom?.access_token) return;
-
-    if (Date.now() > classroom.expiresAt) {
-      atualizarBotaoClassroom(false, true);
-      return;
-    }
-
+    const token = await getTokenValido(uid);
+    if (!token) return;
     atualizarBotaoClassroom(true);
-    await sincronizarClassroom(uid, classroom.access_token);
+    await sincronizarClassroom(uid, token);
   } catch (err) {
     console.warn('[Classroom] Erro ao verificar token:', err);
   }
@@ -203,8 +230,18 @@ async function sincronizarClassroom(uid, token) {
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    // Token inválido / expirado
     if (cursosRes.status === 401) {
+      // Token inválido — tenta renovar uma vez
+      const snap = await getDoc(doc(db, 'users', uid));
+      const refreshToken = snap.data()?.classroom?.refresh_token;
+      if (refreshToken) {
+        const novoToken = await renovarToken(uid, refreshToken);
+        if (novoToken) {
+          // Tenta de novo com token novo
+          await sincronizarClassroom(uid, novoToken);
+          return;
+        }
+      }
       await updateDoc(doc(db, 'users', uid), { 'classroom.access_token': null });
       atualizarBotaoClassroom(false, true);
       _hooks.showToast('🔄 Sessão do Classroom expirada. Reconecte.');
@@ -335,17 +372,16 @@ function injetarBotaoClassroom() {
   `;
   logoutBtn.insertAdjacentElement('beforebegin', wrapper);
 
-  window._conectarClassroom = () => {
+  window._conectarClassroom = async () => {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
-    getDoc(doc(db, 'users', uid)).then(snap => {
-      const cl = snap.data()?.classroom;
-      if (cl?.access_token && Date.now() < cl.expiresAt) {
-        sincronizarClassroom(uid, cl.access_token);
-      } else {
-        conectarClassroom();
-      }
-    });
+    const token = await getTokenValido(uid);
+    if (token) {
+      atualizarBotaoClassroom(true);
+      await sincronizarClassroom(uid, token);
+    } else {
+      conectarClassroom();
+    }
   };
 }
 
