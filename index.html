@@ -129,6 +129,21 @@
         <div id="subjects-list" class="subjects-list"></div>
       </div>
 
+      <div class="sidebar-theme">
+        <span class="sidebar-theme-label">Tema</span>
+        <div class="theme-switcher">
+          <button class="theme-btn" data-theme="default" onclick="setTheme('default')" title="Colorido">
+            <span class="theme-dot" style="background:linear-gradient(135deg,#6c63ff,#ff6584)"></span>
+          </button>
+          <button class="theme-btn" data-theme="dark" onclick="setTheme('dark')" title="Dark">
+            <span class="theme-dot" style="background:linear-gradient(135deg,#18181b,#a0a0b0)"></span>
+          </button>
+          <button class="theme-btn" data-theme="light" onclick="setTheme('light')" title="Light">
+            <span class="theme-dot" style="background:linear-gradient(135deg,#f5f5f4,#44403c)"></span>
+          </button>
+        </div>
+      </div>
+
       <div class="sidebar-footer">
         <div class="sync-status-container">
           <svg id="sync-indicator" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;margin-right:6px;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.32-9.28l5.48 5.48"/></svg>

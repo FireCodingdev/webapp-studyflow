@@ -2048,3 +2048,30 @@ window.dismissInstallBanner = function() {
     localStorage.removeItem(INSTALL_DISMISSED_KEY);
   }
 })();
+// ── Tema ─────────────────────────────────────────────────────────────────────
+const THEME_KEY = 'sf_theme';
+
+window.setTheme = function(theme) {
+  if (theme === 'default') {
+    document.documentElement.removeAttribute('data-theme');
+  } else {
+    document.documentElement.setAttribute('data-theme', theme);
+  }
+  localStorage.setItem(THEME_KEY, theme);
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.theme === theme);
+  });
+};
+
+// Aplica o tema salvo ao carregar
+(function applyStoredTheme() {
+  const saved = localStorage.getItem(THEME_KEY) || 'default';
+  if (saved !== 'default') {
+    document.documentElement.setAttribute('data-theme', saved);
+  }
+  // Marca o botão ativo assim que o DOM estiver pronto
+  document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.querySelector(`.theme-btn[data-theme="${saved}"]`);
+    if (btn) btn.classList.add('active');
+  });
+})();

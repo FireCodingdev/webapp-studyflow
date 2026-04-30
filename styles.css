@@ -8,6 +8,7 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Tema padrão (colorido) */
 :root {
   --bg: #0d0f14;
   --bg2: #161920;
@@ -34,6 +35,44 @@
 
   /* Cores de Matérias */
   --c1: #6c63ff; --c2: #ff6584; --c3: #38ef7d; --c4: #ff9f43; --c5: #00d2ff;
+}
+
+/* ── Tema Dark Neutro ───────────────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --bg: #111113;
+  --bg2: #18181b;
+  --bg3: #1f1f23;
+  --border: #2c2c30;
+  --text: #e8e8ea;
+  --text2: #72727a;
+  --text3: #48484f;
+  --accent: #a0a0b0;
+  --accent-hover: #c8c8cc;
+  --accent-soft: rgba(160, 160, 176, 0.1);
+  --danger: #e05c5c;
+  --success: #4caf7d;
+  --warning: #c9933a;
+  --shadow: 0 8px 24px rgba(0,0,0,0.6);
+  --c1: #6e6e82; --c2: #8a6e7a; --c3: #4a7a62; --c4: #8a7250; --c5: #4a6e82;
+}
+
+/* ── Tema Light Neutro ──────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg: #f5f5f4;
+  --bg2: #ffffff;
+  --bg3: #efefed;
+  --border: #e0dedd;
+  --text: #1c1b1a;
+  --text2: #78716c;
+  --text3: #a8a29e;
+  --accent: #44403c;
+  --accent-hover: #1c1b1a;
+  --accent-soft: rgba(68, 64, 60, 0.08);
+  --danger: #dc2626;
+  --success: #16a34a;
+  --warning: #d97706;
+  --shadow: 0 4px 16px rgba(0,0,0,0.1);
+  --c1: #44403c; --c2: #78716c; --c3: #57534e; --c4: #a8a29e; --c5: #6b7280;
 }
 
 body {
@@ -643,6 +682,41 @@ a { color: inherit; text-decoration: none; }
 }
 
 .subject-name { font-weight: 700; }
+
+/* ── Theme Switcher ─────────────────────────────────────────────────────────── */
+.sidebar-theme {
+  padding: 10px 14px 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sidebar-theme-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.theme-switcher {
+  display: flex;
+  gap: 8px;
+}
+.theme-btn {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.2s, transform 0.15s;
+}
+.theme-btn:hover { transform: scale(1.1); }
+.theme-btn.active { border-color: var(--accent); }
+.theme-dot {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  display: block;
+}
 
 .sidebar-footer {
   margin-top: auto;
@@ -1832,3 +1906,60 @@ a { color: inherit; text-decoration: none; }
 .fc-itab.active { background: var(--accent-soft); color: var(--accent); }
 
 .sn-unread { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   LIGHT THEME — overrides para elementos com cores hardcoded
+   ══════════════════════════════════════════════════════════════════════════════ */
+[data-theme="light"] .sidebar,
+[data-theme="light"] .topbar {
+  background: var(--bg2);
+  border-color: var(--border);
+}
+[data-theme="light"] .nav-item:hover,
+[data-theme="light"] .nav-item.active {
+  background: var(--accent-soft);
+}
+[data-theme="light"] .card,
+[data-theme="light"] .schedule-card,
+[data-theme="light"] .task-item,
+[data-theme="light"] .mat-block,
+[data-theme="light"] .mat-file-card,
+[data-theme="light"] .db-card {
+  background: var(--bg2);
+  border-color: var(--border);
+}
+[data-theme="light"] .modal {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+}
+[data-theme="light"] .form-input,
+[data-theme="light"] .form-textarea,
+[data-theme="light"] .form-select {
+  background: var(--bg3);
+  border-color: var(--border);
+  color: var(--text);
+}
+[data-theme="light"] .sidebar-footer {
+  border-top-color: var(--border);
+}
+[data-theme="light"] .topbar {
+  border-bottom-color: var(--border);
+}
+[data-theme="light"] .btn-secondary {
+  background: var(--bg3);
+  border-color: var(--border);
+  color: var(--text);
+}
+[data-theme="light"] .logout-btn {
+  background: var(--bg3);
+  color: var(--text2);
+}
+[data-theme="light"] .logout-btn:hover {
+  background: #fee2e2;
+  color: var(--danger);
+}
+
+/* DARK THEME — ajustes pontuais */
+[data-theme="dark"] .sidebar-footer {
+  border-top-color: var(--border);
+}
