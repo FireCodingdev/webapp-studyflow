@@ -820,28 +820,30 @@ function renderDashboard() {
         const d = new Date(e.deadline + 'T00:00:00');
         const diff = Math.round((d - todayD) / (1000*60*60*24));
 
-        // Data formatada: "seg, 14 jul" ou "HOJE"
         const dateLabel = diff === 0 ? 'HOJE' : diff === 1 ? 'amanhã' :
           d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' })
-           .replace('.', '').replace(',', ',');
+           .replace(/\./g, '');
 
         const urgCls = diff === 0 ? 'db-exam-urgent' : diff <= 3 ? 'db-exam-soon' : diff <= 7 ? 'db-exam-week' : 'db-exam-ok';
         const subjectColor = e.subjectColor || 'var(--accent)';
 
-        // Linha de assuntos: usa notes se existir, senão nada
-        const subLine = e.notes
-          ? `<span class="db-exam-notes" style="color:${subjectColor}">${escapeHtml(e.notes)}</span>`
+        const notesLine = e.notes
+          ? `<div class="exam-card-notes">${escapeHtml(e.notes)}</div>`
           : '';
 
         return `
-          <div class="db-exam-card" style="border-left: 3px solid ${subjectColor}">
-            <div class="db-exam-info">
-              <span class="db-exam-title">${escapeHtml(e.title)}</span>
-              ${subLine}
-            </div>
-            <div class="db-exam-right">
-              <span class="db-exam-badge ${urgCls}">${dateLabel}</span>
-              ${diff > 0 ? `<span class="db-exam-countdown">${diff}d</span>` : ''}
+          <div class="cls-card">
+            <div class="cls-card-bar" style="background:${subjectColor}"></div>
+            <div class="cls-card-body">
+              <div class="cls-card-row">
+                <span class="cls-card-name">${escapeHtml(e.title)}</span>
+                <span class="db-exam-badge ${urgCls}">${dateLabel}</span>
+              </div>
+              <div class="cls-card-meta">
+                ${e.subjectName ? `<span class="cls-meta" style="color:${subjectColor};font-weight:600">${escapeHtml(e.subjectName)}</span>` : ''}
+                ${diff > 0 ? `<span class="cls-meta cls-meta--dim">${diff}d restantes</span>` : ''}
+              </div>
+              ${notesLine}
             </div>
           </div>`;
       }).join('');
