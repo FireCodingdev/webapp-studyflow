@@ -1676,3 +1676,127 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 480px) {
   .flashcards-list { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
 }
+
+
+/* ===== FLASHCARDS SOCIAL — Abas ===== */
+.fctab-bar {
+  display: flex;
+  gap: 4px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 4px;
+  margin-bottom: 16px;
+}
+.fctab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+  position: relative;
+}
+.fctab:hover { background: var(--bg3); color: var(--text); }
+.fctab.active { background: var(--accent); color: #fff; }
+.fctab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: #ef4444;
+  color: #fff;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.fc-panel { display: none; }
+.fc-panel--active { display: block; }
+
+.fc-personal-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.fc-feed-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.fc-feed-desc { font-size: 12px; color: var(--text2); }
+.fc-feed-refresh {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+.fc-feed-refresh:hover { background: var(--accent-soft); }
+.fc-feed-loading, .fc-feed-empty {
+  text-align: center;
+  color: var(--text2);
+  font-size: 13px;
+  padding: 32px 0;
+}
+
+/* Ações dentro do card do feed */
+.fc-feed-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.fc-like-btn, .fc-save-btn, .fc-del-feed-btn {
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1.5px solid rgba(0,0,0,0.15);
+  background: rgba(255,255,255,0.55);
+  color: rgba(0,0,0,0.7);
+  transition: background 0.15s, transform 0.1s;
+}
+.fc-like-btn:hover, .fc-save-btn:hover, .fc-del-feed-btn:hover {
+  background: rgba(255,255,255,0.85);
+  transform: scale(1.04);
+}
+.fc-liked { border-color: rgba(239,68,68,0.5); }
+
+/* Inbox tabs */
+.fc-inbox-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+.fc-itab {
+  padding: 6px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.fc-itab:hover { background: var(--bg3); color: var(--text); }
+.fc-itab.active { background: var(--accent-soft); color: var(--accent); }
+
+.sn-unread { outline: 2px solid var(--accent); outline-offset: 1px; }

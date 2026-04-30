@@ -273,16 +273,59 @@
 
       <div id="page-flashcards" class="page">
         <div class="page-content">
-          <div class="fc-header-info">
-            <span id="fc-due-count" class="badge">0 para revisar hoje</span>
+
+          <!-- Abas principais -->
+          <div class="fctab-bar">
+            <button class="fctab active" data-fctab="personal" onclick="switchFcTab('personal')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M8 10h8M8 14h5"/></svg>
+              Meus Cards
+            </button>
+            <button class="fctab" data-fctab="feed" onclick="switchFcTab('feed')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>
+              Feed Global
+            </button>
+            <button class="fctab" data-fctab="inbox" onclick="switchFcTab('inbox')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>
+              Trocas
+              <span class="fctab-badge" id="inbox-badge" style="display:none">0</span>
+            </button>
           </div>
-          <div class="filter-tabs">
-            <button class="fc-filter-tab filter-tab active" data-fcfilter="all" onclick="filterFlashcards('all')">Todos</button>
-            <button class="fc-filter-tab filter-tab" data-fcfilter="due" onclick="filterFlashcards('due')">Para revisar</button>
+
+          <!-- PAINEL: Meus Cards -->
+          <div id="fc-panel-personal" class="fc-panel fc-panel--active">
+            <div class="fc-personal-bar">
+              <span id="fc-due-count" class="badge">0 para revisar hoje</span>
+              <div class="filter-tabs" style="margin:0">
+                <button class="fc-filter-tab filter-tab active" data-fcfilter="all" onclick="filterFlashcards('all')">Todos</button>
+                <button class="fc-filter-tab filter-tab" data-fcfilter="due" onclick="filterFlashcards('due')">Revisar</button>
+              </div>
+            </div>
+            <div id="flashcards-list" class="flashcards-list mt-4"></div>
           </div>
-          <div id="flashcards-list" class="flashcards-list mt-4"></div>
+
+          <!-- PAINEL: Feed Global -->
+          <div id="fc-panel-feed" class="fc-panel">
+            <div class="fc-feed-bar">
+              <span class="fc-feed-desc">Cards publicados pela comunidade</span>
+              <button class="fc-feed-refresh" onclick="loadFeedCards()">↻ Atualizar</button>
+            </div>
+            <div id="fc-feed-list" class="flashcards-list mt-4">
+              <div class="fc-feed-loading">Carregando feed...</div>
+            </div>
+          </div>
+
+          <!-- PAINEL: Trocas -->
+          <div id="fc-panel-inbox" class="fc-panel">
+            <div class="fc-inbox-tabs">
+              <button class="fc-itab active" data-itab="received" onclick="switchInboxTab('received')">Recebidos</button>
+              <button class="fc-itab" data-itab="sent" onclick="switchInboxTab('sent')">Enviados</button>
+            </div>
+            <div id="fc-inbox-received" class="flashcards-list mt-4"></div>
+            <div id="fc-inbox-sent"     class="flashcards-list mt-4" style="display:none"></div>
+          </div>
+
         </div>
-        <button class="fab" onclick="openAddFlashcard()">
+        <button class="fab" id="fc-fab" onclick="onFcFab()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
         </button>
       </div>

@@ -283,6 +283,14 @@ async function initAppForUser(user) {
   if (avatarEl) avatarEl.textContent = initials;
   if (nameEl) nameEl.textContent = name;
 
+  // Salva perfil público para sistema de busca de destinatário (envio de cards)
+  try {
+    const { setDoc: _setDoc, doc: _doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    await _setDoc(_doc(db, 'user_profiles', user.uid), {
+      uid: user.uid, email: user.email, displayName: name, updatedAt: new Date().toISOString(),
+    }, { merge: true });
+  } catch(_) {}
+
   // Regra: quando online, prioriza a nuvem (Firestore) e só usa local como fallback.
   // Quando offline, usa apenas local.
   let loaded = false;
@@ -1425,6 +1433,313 @@ window.filterFlashcards = function(filter) {
   document.querySelectorAll('.fc-filter-tab').forEach(t => t.classList.remove('active'));
   document.querySelector(`[data-fcfilter="${filter}"]`)?.classList.add('active');
   renderFlashcards();
+};
+
+// ===== FLASHCARDS SOCIAL =====
+import {
+  collection, addDoc, getDocs, query, orderBy, limit,
+  where, serverTimestamp, updateDoc, arrayUnion, arrayRemove,
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+let _fcCurrentTab = 'personal';
+
+window.switchFcTab = function(tab) {
+  _fcCurrentTab = tab;
+  document.querySelectorAll('.fctab').forEach(b => b.classList.toggle('active', b.dataset.fctab === tab));
+  document.querySelectorAll('.fc-panel').forEach(p => p.classList.remove('fc-panel--active'));
+  document.getElementById(`fc-panel-${tab}`)?.classList.add('fc-panel--active');
+
+  const fab = document.getElementById('fc-fab');
+  if (fab) {
+    fab.title = tab === 'feed' ? 'Publicar no Feed' : tab === 'inbox' ? 'Enviar card' : 'Novo card';
+  }
+
+  if (tab === 'feed') loadFeedCards();
+  if (tab === 'inbox') loadInbox();
+};
+
+window.onFcFab = function() {
+  if (_fcCurrentTab === 'feed')   openPublishCard();
+  else if (_fcCurrentTab === 'inbox') openSendCard();
+  else openAddFlashcard();
+};
+
+// ── Feed Global ──────────────────────────────────────────────────────────────
+window.loadFeedCards = async function() {
+  const el = document.getElementById('fc-feed-list');
+  if (!el) return;
+  el.innerHTML = `<div class="fc-feed-loading">Carregando...</div>`;
+  try {
+    const q = query(collection(db, 'fc_feed'), orderBy('createdAt', 'desc'), limit(40));
+    const snap = await getDocs(q);
+    if (snap.empty) {
+      el.innerHTML = `<div class="fc-feed-empty">Nenhum card publicado ainda. Seja o primeiro! 🚀</div>`;
+      return;
+    }
+    const uid = auth.currentUser?.uid;
+    el.innerHTML = snap.docs.map(d => {
+      const c = d.data();
+      const col = FC_NOTE_COLORS[Math.abs(d.id.split('').reduce((a,ch)=>a*31+ch.charCodeAt(0),0)) % FC_NOTE_COLORS.length];
+      const likes = (c.likes || []).length;
+      const liked = uid && (c.likes||[]).includes(uid);
+      const isOwn = uid && c.authorId === uid;
+      const date  = c.createdAt?.toDate?.()?.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) || '';
+      return `
+      <div class="sn-card" style="--sn-bg:${col.bg};--sn-text:${col.text};--sn-fold:${col.fold};--sn-sub:${col.fold}">
+        <div class="sn-top">
+          <span class="sn-subject">${escapeHtml(c.authorName || 'Anônimo')}</span>
+          <span style="font-size:10px;color:rgba(255,255,255,0.7)">${date}</span>
+        </div>
+        <div class="sn-body" onclick="flipFeedCard('${d.id}')">
+          <div class="sn-front" id="fdf-${d.id}">
+            ${c.subject ? `<span style="font-size:10px;font-weight:800;opacity:0.6;text-transform:uppercase;letter-spacing:.05em">${escapeHtml(c.subject)}</span>` : ''}
+            <p class="sn-text">${escapeHtml(c.front)}</p>
+            <span class="sn-hint">toque para revelar ↓</span>
+          </div>
+          <div class="sn-back" id="fdb-${d.id}" style="display:none">
+            <p class="sn-text sn-answer">${escapeHtml(c.back)}</p>
+            <div class="fc-feed-actions" onclick="event.stopPropagation()">
+              <button class="fc-like-btn ${liked?'fc-liked':''}" onclick="toggleLike('${d.id}',${liked})">
+                ${liked?'❤️':'🤍'} ${likes}
+              </button>
+              ${!isOwn ? `<button class="fc-save-btn" onclick="saveFeedCard('${d.id}')">📥 Salvar</button>` : ''}
+              ${isOwn  ? `<button class="fc-del-feed-btn" onclick="deleteFeedCard('${d.id}')">🗑️</button>` : ''}
+            </div>
+          </div>
+        </div>
+        <div class="sn-fold"></div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    console.error(e);
+    el.innerHTML = `<div class="fc-feed-empty">Erro ao carregar feed.</div>`;
+  }
+};
+
+window.flipFeedCard = function(id) {
+  const f = document.getElementById(`fdf-${id}`);
+  const b = document.getElementById(`fdb-${id}`);
+  if (!f||!b) return;
+  const flipped = b.style.display !== 'none';
+  f.style.display = flipped ? 'flex' : 'none';
+  b.style.display = flipped ? 'none' : 'flex';
+};
+
+window.toggleLike = async function(docId, currentlyLiked) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) { showToast('Faça login para curtir'); return; }
+  try {
+    const ref = doc(db, 'fc_feed', docId);
+    await updateDoc(ref, { likes: currentlyLiked ? arrayRemove(uid) : arrayUnion(uid) });
+    loadFeedCards();
+  } catch(e) { showToast('Erro ao curtir'); }
+};
+
+window.saveFeedCard = async function(docId) {
+  try {
+    const snap = await getDocs(query(collection(db,'fc_feed'), where('__name__','==',docId)));
+    if (snap.empty) return;
+    const c = snap.docs[0].data();
+    STATE.flashcards.push({
+      id: Date.now().toString(), front: c.front, back: c.back,
+      subjectId: null, subjectName: c.subject || null, subjectColor: null,
+      interval: 1, easeFactor: 2.5, nextReview: toLocalISODate(),
+      repetitions: 0, createdAt: new Date().toISOString(), fromFeed: docId,
+    });
+    await save();
+    showToast('📥 Card salvo nos seus flashcards!');
+  } catch(e) { showToast('Erro ao salvar card'); }
+};
+
+window.deleteFeedCard = async function(docId) {
+  if (!confirm('Remover do feed?')) return;
+  try {
+    const { deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    await deleteDoc(doc(db,'fc_feed',docId));
+    showToast('Card removido do feed');
+    loadFeedCards();
+  } catch(e) { showToast('Erro ao remover'); }
+};
+
+window.openPublishCard = function() {
+  openModal('Publicar no Feed Global', `
+    <div class="form-group">
+      <label class="form-label">Assunto / Matéria</label>
+      <input id="pub-subject" class="form-input" placeholder="Ex: Fotossíntese, Derivadas..." maxlength="40">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Pergunta (frente)</label>
+      <textarea id="pub-front" class="form-textarea" rows="3" placeholder="O que é...?"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Resposta (verso)</label>
+      <textarea id="pub-back" class="form-textarea" rows="3" placeholder="Resposta..."></textarea>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" onclick="publishCard()">🌐 Publicar</button>
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+    </div>
+  `);
+};
+
+window.publishCard = async function() {
+  const front   = document.getElementById('pub-front')?.value?.trim();
+  const back    = document.getElementById('pub-back')?.value?.trim();
+  const subject = document.getElementById('pub-subject')?.value?.trim();
+  if (!front || !back) { showToast('Preencha pergunta e resposta'); return; }
+  const user = auth.currentUser;
+  if (!user) { showToast('Faça login primeiro'); return; }
+  try {
+    await addDoc(collection(db,'fc_feed'), {
+      front, back, subject: subject || '',
+      authorId: user.uid,
+      authorName: user.displayName || user.email?.split('@')[0] || 'Anônimo',
+      likes: [],
+      createdAt: serverTimestamp(),
+    });
+    closeModal();
+    showToast('🌐 Card publicado no feed!');
+    switchFcTab('feed');
+  } catch(e) { showToast('Erro ao publicar'); }
+};
+
+// ── Trocas (envio/recebimento) ───────────────────────────────────────────────
+window.switchInboxTab = function(tab) {
+  document.querySelectorAll('.fc-itab').forEach(b => b.classList.toggle('active', b.dataset.itab === tab));
+  document.getElementById('fc-inbox-received').style.display = tab === 'received' ? '' : 'none';
+  document.getElementById('fc-inbox-sent').style.display     = tab === 'sent'     ? '' : 'none';
+};
+
+window.loadInbox = async function() {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+  try {
+    const [recvSnap, sentSnap] = await Promise.all([
+      getDocs(query(collection(db,'fc_inbox'), where('toId','==',uid), orderBy('createdAt','desc'), limit(30))),
+      getDocs(query(collection(db,'fc_inbox'), where('fromId','==',uid), orderBy('createdAt','desc'), limit(30))),
+    ]);
+
+    // badge
+    const unread = recvSnap.docs.filter(d => !d.data().read).length;
+    const badge = document.getElementById('inbox-badge');
+    if (badge) { badge.textContent = unread; badge.style.display = unread ? 'inline-flex' : 'none'; }
+
+    const renderInboxCards = (docs, isSent) => {
+      if (docs.length === 0) return `<div class="fc-feed-empty">${isSent ? 'Nenhum card enviado.' : 'Nenhum card recebido.'}</div>`;
+      return `<div class="flashcards-list">${docs.map(d => {
+        const c = d.data();
+        const col = FC_NOTE_COLORS[Math.abs(d.id.split('').reduce((a,ch)=>a*31+ch.charCodeAt(0),0)) % FC_NOTE_COLORS.length];
+        const date = c.createdAt?.toDate?.()?.toLocaleDateString('pt-BR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) || '';
+        return `
+        <div class="sn-card ${!c.read && !isSent ? 'sn-unread' : ''}" style="--sn-bg:${col.bg};--sn-text:${col.text};--sn-fold:${col.fold};--sn-sub:${col.fold}">
+          <div class="sn-top">
+            <span class="sn-subject">${isSent ? '→ '+escapeHtml(c.toName||'') : '← '+escapeHtml(c.fromName||'')}</span>
+            <span style="font-size:10px;color:rgba(255,255,255,0.7)">${date}</span>
+          </div>
+          <div class="sn-body" onclick="flipFeedCard('ib-${d.id}')">
+            <div class="sn-front" id="fdf-ib-${d.id}">
+              ${c.subject ? `<span style="font-size:10px;font-weight:800;opacity:0.6;text-transform:uppercase">${escapeHtml(c.subject)}</span>` : ''}
+              <p class="sn-text">${escapeHtml(c.front)}</p>
+              <span class="sn-hint">toque para revelar ↓</span>
+            </div>
+            <div class="sn-back" id="fdb-ib-${d.id}" style="display:none">
+              <p class="sn-text sn-answer">${escapeHtml(c.back)}</p>
+              <div class="fc-feed-actions" onclick="event.stopPropagation()">
+                ${!isSent ? `<button class="fc-save-btn" onclick="saveInboxCard('${d.id}')">📥 Salvar</button>` : ''}
+              </div>
+            </div>
+          </div>
+          <div class="sn-fold"></div>
+        </div>`;
+      }).join('')}</div>`;
+    };
+
+    document.getElementById('fc-inbox-received').innerHTML = renderInboxCards(recvSnap.docs, false);
+    document.getElementById('fc-inbox-sent').innerHTML     = renderInboxCards(sentSnap.docs, true);
+
+    // Marcar como lidos
+    for (const d of recvSnap.docs) {
+      if (!d.data().read) updateDoc(doc(db,'fc_inbox',d.id), { read: true }).catch(()=>{});
+    }
+  } catch(e) { console.error(e); }
+};
+
+window.saveInboxCard = async function(docId) {
+  try {
+    const snap = await getDocs(query(collection(db,'fc_inbox'), where('__name__','==',docId)));
+    if (snap.empty) return;
+    const c = snap.docs[0].data();
+    STATE.flashcards.push({
+      id: Date.now().toString(), front: c.front, back: c.back,
+      subjectId: null, subjectName: c.subject || null, subjectColor: null,
+      interval:1, easeFactor:2.5, nextReview: toLocalISODate(),
+      repetitions:0, createdAt: new Date().toISOString(),
+    });
+    await save();
+    showToast('📥 Card salvo!');
+  } catch(e) { showToast('Erro ao salvar'); }
+};
+
+window.openSendCard = function() {
+  const myCards = STATE.flashcards;
+  const cardOpts = myCards.length
+    ? myCards.map(c => `<option value="${c.id}">${escapeHtml(c.front.slice(0,50))}</option>`).join('')
+    : '<option disabled>Nenhum card pessoal</option>';
+  openModal('Enviar Card para Alguém', `
+    <div class="form-group">
+      <label class="form-label">E-mail do destinatário</label>
+      <input id="send-email" class="form-input" type="email" placeholder="amigo@email.com">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Ou criar novo card para enviar</label>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Assunto</label>
+      <input id="send-subject" class="form-input" placeholder="Matéria / tema" maxlength="40">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Pergunta</label>
+      <textarea id="send-front" class="form-textarea" rows="2" placeholder="Frente do card..."></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Resposta</label>
+      <textarea id="send-back" class="form-textarea" rows="2" placeholder="Verso do card..."></textarea>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" onclick="sendCard()">📤 Enviar</button>
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+    </div>
+  `);
+};
+
+window.sendCard = async function() {
+  const email   = document.getElementById('send-email')?.value?.trim();
+  const front   = document.getElementById('send-front')?.value?.trim();
+  const back    = document.getElementById('send-back')?.value?.trim();
+  const subject = document.getElementById('send-subject')?.value?.trim();
+  if (!email) { showToast('Digite o e-mail do destinatário'); return; }
+  if (!front || !back) { showToast('Preencha pergunta e resposta'); return; }
+  const user = auth.currentUser;
+  if (!user) { showToast('Faça login primeiro'); return; }
+
+  try {
+    // Busca uid do destinatário pelo e-mail via coleção pública de usuários
+    const toSnap = await getDocs(query(collection(db,'user_profiles'), where('email','==',email), limit(1)));
+    if (toSnap.empty) { showToast('Usuário não encontrado. Ele precisa ter uma conta.'); return; }
+    const toUser = toSnap.docs[0].data();
+
+    await addDoc(collection(db,'fc_inbox'), {
+      front, back, subject: subject || '',
+      fromId: user.uid,
+      fromName: user.displayName || user.email?.split('@')[0] || 'Anônimo',
+      toId: toUser.uid,
+      toName: toUser.displayName || email,
+      read: false,
+      createdAt: serverTimestamp(),
+    });
+    closeModal();
+    showToast('📤 Card enviado!');
+  } catch(e) { console.error(e); showToast('Erro ao enviar card'); }
 };
 
 // ===== MATERIAIS (por matéria, com pasta local) =====
