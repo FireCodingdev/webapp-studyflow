@@ -1,85 +1,104 @@
-// ===== SOCIAL: MODERATION.JS =====
-// Denúncias e filtros de conteúdo — NOVO MÓDULO
+// ===== FUNCTIONS/MODERATION.JS =====
+// Cloud Functions de moderação de conteúdo — backend
+// NÃO é um módulo de browser. Deploy: firebase deploy --only functions
 
-import { db } from '../firebase.js';
+const { onCall } = require('firebase-functions/v2/https');
+const { getFirestore } = require('firebase-admin/firestore');
 
-const {
-  addDoc, collection, serverTimestamp, updateDoc, doc, increment,
-} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+const db = getFirestore();
+const ESCALATION_THRESHOLD = 10;
 
-// ---- Palavras básicas de filtro local (client-side) ----
-const BLOCKED_WORDS = [
-  'spam', 'golpe', 'fraude', 'scam', 'cassino', 'apostas',
-];
+// ── moderatePost — ação de moderação em um post (approve/remove/warn_author) ─
+const moderatePost = onCall({ maxInstances: 10 }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new Error('Não autenticado');
 
-// ---- Verificar conteúdo antes de publicar ----
-export function checkContentLocal(text) {
-  const lower = text.toLowerCase();
-  const found = BLOCKED_WORDS.filter(w => lower.includes(w));
-  return { clean: found.length === 0, flaggedWords: found };
-}
+  const { postId, action, reason } = request.data || {};
+  if (!postId || !action) throw new Error('postId e action são obrigatórios');
 
-// ---- Denunciar um post ----
-export async function reportPost(postId, reason) {
-  const { auth } = await import('../firebase.js');
-  const user = auth.currentUser;
-  if (!user) return false;
+  const validActions = ['approve', 'remove', 'warn_author'];
+  if (!validActions.includes(action)) throw new Error(`action deve ser: ${validActions.join(', ')}`);
 
   try {
-    await addDoc(collection(db, 'reports'), {
-      postId,
-      reportedBy: user.uid,
-      reason: reason || 'inappropriate',
-      createdAt: serverTimestamp(),
-      status: 'pending',  // "pending" | "reviewed" | "dismissed"
+    const userSnap = await db.doc(`users/${uid}`).get();
+    const role = userSnap.exists ? (userSnap.data().role || 'user') : 'user';
+    if (role !== 'moderator' && role !== 'admin') throw new Error('Sem permissão: apenas moderadores');
+
+    const postRef  = db.doc(`posts/${postId}`);
+    const postSnap = await postRef.get();
+    if (!postSnap.exists) throw new Error('Post não encontrado');
+    const post = postSnap.data();
+
+    if (action === 'approve') {
+      await postRef.update({ moderationStatus: 'approved', reviewedBy: uid, reviewedAt: new Date() });
+
+    } else if (action === 'remove') {
+      await postRef.update({
+        moderationStatus: 'removed', removedBy: uid, removedAt: new Date(),
+        removedReason: reason || 'Violação das diretrizes da comunidade',
+      });
+      await db.collection('notifications').doc(post.authorId).collection('items').add({
+        type: 'post_removed', fromUid: uid, postId,
+        reason: reason || 'Violação das diretrizes da comunidade',
+        read: false, createdAt: new Date(),
+      });
+
+    } else if (action === 'warn_author') {
+      await db.collection('notifications').doc(post.authorId).collection('items').add({
+        type: 'content_warning', fromUid: uid, postId,
+        reason: reason || 'Seu conteúdo recebeu denúncias. Por favor revise as diretrizes.',
+        read: false, createdAt: new Date(),
+      });
+    }
+
+    await db.collection('moderation_log').add({
+      postId, moderatorId: uid, action, reason: reason || null, createdAt: new Date(),
     });
 
-    // Incrementa contador de denúncias no post
-    await updateDoc(doc(db, 'posts', postId), {
-      reportCount: increment(1),
-    });
-
-    return true;
+    console.log(`[moderation] moderatePost: post ${postId} — "${action}" por ${uid}`);
+    return { success: true, action };
   } catch (err) {
-    console.error('[moderation] Erro ao denunciar:', err);
-    return false;
+    console.error('[moderation] moderatePost erro:', err);
+    throw new Error(err.message);
   }
-}
+});
 
-// ---- Modal de denúncia ----
-window.openReportModal = function(postId) {
-  const overlay = document.getElementById('modal-overlay');
-  const body = document.getElementById('modal-body');
-  if (!overlay || !body) return;
+// ── escalateReport — escalonamento de denúncia para fila de moderação ────────
+const escalateReport = onCall({ maxInstances: 10 }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new Error('Não autenticado');
 
-  body.innerHTML = `
-    <div class="modal-header"><h3>🚩 Denunciar Post</h3></div>
-    <div class="modal-form">
-      <div class="form-group">
-        <label class="form-label">Motivo</label>
-        <select id="report-reason" class="form-input">
-          <option value="spam">Spam / Publicidade</option>
-          <option value="inappropriate">Conteúdo inapropriado</option>
-          <option value="harassment">Assédio</option>
-          <option value="misinformation">Informação falsa</option>
-          <option value="other">Outro</option>
-        </select>
-      </div>
-      <button class="btn-primary" onclick="window.submitReport('${postId}')">Enviar Denúncia</button>
-    </div>
-  `;
-  overlay.classList.add('active');
-  document.getElementById('modal-container')?.classList.add('active');
-};
+  const { reportId, note } = request.data || {};
+  if (!reportId) throw new Error('reportId é obrigatório');
 
-window.submitReport = async function(postId) {
-  const reason = document.getElementById('report-reason')?.value;
-  const ok = await reportPost(postId, reason);
-  window.closeModal?.();
-  const toastEl = document.getElementById('toast');
-  if (toastEl) {
-    toastEl.textContent = ok ? '🚩 Denúncia enviada. Obrigado!' : '❌ Erro ao enviar denúncia.';
-    toastEl.classList.add('show');
-    setTimeout(() => toastEl.classList.remove('show'), 2500);
+  try {
+    const reportRef  = db.doc(`reports/${reportId}`);
+    const reportSnap = await reportRef.get();
+    if (!reportSnap.exists) throw new Error('Denúncia não encontrada');
+    const report = reportSnap.data();
+
+    const postSnap   = await db.doc(`posts/${report.postId}`).get();
+    const reportCount = postSnap.exists ? (postSnap.data().reportCount || 0) : 0;
+    const priority   = reportCount >= ESCALATION_THRESHOLD ? 'high' : 'normal';
+
+    await reportRef.update({
+      status: 'escalated', escalatedBy: uid, escalatedAt: new Date(),
+      escalationNote: note || null, priority,
+    });
+
+    if (postSnap.exists) {
+      const currentStatus = postSnap.data().moderationStatus;
+      if (!currentStatus || currentStatus === 'active') {
+        await db.doc(`posts/${report.postId}`).update({ moderationStatus: 'under_review' });
+      }
+    }
+
+    console.log(`[moderation] escalateReport: ${reportId} escalonado por ${uid} (prioridade: ${priority})`);
+    return { success: true, priority };
+  } catch (err) {
+    console.error('[moderation] escalateReport erro:', err);
+    throw new Error(err.message);
   }
-};
+});
+
+module.exports = { moderatePost, escalateReport };

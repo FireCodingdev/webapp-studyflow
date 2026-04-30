@@ -1,131 +1,53 @@
-// ===== SOCIAL: FEED.JS =====
-// Timeline / Feed Central — NOVO MÓDULO
-// Renderiza posts do Firestore na página #page-feed
+// ===== FUNCTIONS/FEED.JS =====
+// Firestore triggers para o Feed social — Cloud Functions backend
+// NÃO é um módulo de browser. Deploy: firebase deploy --only functions
 
-import { db } from '../firebase.js';
-import { renderPostCard } from '../components/post-card.js';
+const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
+const { getFirestore } = require('firebase-admin/firestore');
 
-const {
-  collection, query, orderBy, limit, onSnapshot,
-  addDoc, serverTimestamp, where, getDocs,
-} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+const db = getFirestore();
 
-let _feedUnsubscribe = null;
-let _feedState = null;
-
-// ---- Inicializa o módulo de Feed ----
-export function initFeed(STATE, helpers) {
-  _feedState = { STATE, helpers };
-  window._initFeed = initFeed;
-  window._renderFeed = renderFeed;
-}
-
-// ---- Renderiza o feed (chamada pelo navigateTo) ----
-export async function renderFeed() {
-  const container = document.getElementById('feed-list');
-  if (!container) return;
-  container.innerHTML = `<div class="feed-loading">⏳ Carregando posts...</div>`;
-
-  // Cancela listener anterior
-  if (_feedUnsubscribe) { _feedUnsubscribe(); _feedUnsubscribe = null; }
-
-  const { auth } = await import('../firebase.js');
-  const user = auth.currentUser;
-  if (!user) { container.innerHTML = `<p class="feed-empty">Faça login para ver o feed.</p>`; return; }
-
-  const postsQuery = query(
-    collection(db, 'posts'),
-    orderBy('createdAt', 'desc'),
-    limit(30)
-  );
-
-  _feedUnsubscribe = onSnapshot(postsQuery, (snap) => {
-    if (snap.empty) {
-      container.innerHTML = `<div class="feed-empty">Nenhum post ainda. Seja o primeiro a compartilhar! 🚀</div>`;
-      return;
-    }
-    const posts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    container.innerHTML = posts.map(p => renderPostCard(p, user.uid)).join('');
-  }, (err) => {
-    console.error('[feed] Erro ao ouvir posts:', err);
-    container.innerHTML = `<div class="feed-empty">Erro ao carregar feed. Verifique sua conexão.</div>`;
-  });
-}
-
-// ---- Publicar novo post ----
-export async function publishPost({ type, content, subjectId, visibility }) {
-  const { auth } = await import('../firebase.js');
-  const user = auth.currentUser;
-  if (!user || !content?.trim()) return null;
-
+// ── Trigger: novo post criado em /posts/{postId} ────────────────────────────
+const onPostCreated = onDocumentCreated('posts/{postId}', async (event) => {
+  const post = event.data?.data();
+  if (!post) return;
+  const { authorId, type, content } = post;
+  const postId = event.params.postId;
   try {
-    const ref = await addDoc(collection(db, 'posts'), {
-      authorId: user.uid,
-      authorName: user.displayName || user.email.split('@')[0],
-      type: type || 'doubt',          // "doubt"|"material"|"achievement"|"flashcard"
-      content: content.trim(),
-      subjectId: subjectId || '',
-      likes: 0,
-      replies: [],
-      visibility: visibility || 'public',
-      createdAt: serverTimestamp(),
+    const connSnap = await db.doc(`connections/${authorId}`).get();
+    const followers = connSnap.exists ? (connSnap.data().followers || []) : [];
+    if (!followers.length) return;
+    const batch = db.batch();
+    for (const followerId of followers.slice(0, 100)) {
+      const notifRef = db.collection('notifications').doc(followerId).collection('items').doc();
+      batch.set(notifRef, {
+        toUid: followerId, fromUid: authorId, type: 'new_post',
+        postId, postType: type || 'doubt',
+        preview: (content || '').slice(0, 120),
+        read: false, createdAt: new Date(),
+      });
+    }
+    await batch.commit();
+    console.log(`[feed] onPostCreated: ${followers.length} notificações criadas para post ${postId}`);
+  } catch (err) { console.error('[feed] onPostCreated erro:', err); }
+});
+
+// ── Trigger: reportCount atualizado — auto-flag ao atingir 5 denúncias ──────
+const onPostReportCountUpdated = onDocumentWritten('posts/{postId}', async (event) => {
+  const after  = event.data?.after?.data();
+  const before = event.data?.before?.data();
+  if (!after) return;
+  const countAfter  = after.reportCount  || 0;
+  const countBefore = before?.reportCount || 0;
+  if (countAfter <= countBefore || countAfter < 5) return;
+  const status = after.moderationStatus;
+  if (status === 'under_review' || status === 'removed') return;
+  try {
+    await db.doc(`posts/${event.params.postId}`).update({
+      moderationStatus: 'under_review', autoFlaggedAt: new Date(),
     });
-    return ref.id;
-  } catch (err) {
-    console.error('[feed] Erro ao publicar post:', err);
-    return null;
-  }
-}
+    console.log(`[feed] post ${event.params.postId} → under_review (${countAfter} denúncias)`);
+  } catch (err) { console.error('[feed] onPostReportCountUpdated erro:', err); }
+});
 
-// ---- Abrir modal de criação de post ----
-window.openNewPostModal = function() {
-  const overlay = document.getElementById('modal-overlay');
-  const body = document.getElementById('modal-body');
-  if (!overlay || !body) return;
-
-  body.innerHTML = `
-    <div class="modal-header"><h3>📝 Novo Post</h3></div>
-    <div class="modal-form">
-      <div class="form-group">
-        <label class="form-label">Tipo</label>
-        <select id="post-type" class="form-input">
-          <option value="doubt">❓ Dúvida</option>
-          <option value="material">📚 Material</option>
-          <option value="achievement">🏆 Conquista</option>
-          <option value="flashcard">🃏 Flashcard</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Visibilidade</label>
-        <select id="post-visibility" class="form-input">
-          <option value="public">🌍 Público</option>
-          <option value="connections">👥 Conexões</option>
-          <option value="group">🏫 Grupo</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Conteúdo</label>
-        <textarea id="post-content" class="form-input" rows="4" placeholder="Compartilhe uma dúvida, material ou conquista..."></textarea>
-      </div>
-      <button class="btn-primary" onclick="window.submitNewPost()">Publicar</button>
-    </div>
-  `;
-  overlay.classList.add('active');
-  document.getElementById('modal-container')?.classList.add('active');
-};
-
-window.submitNewPost = async function() {
-  const type = document.getElementById('post-type')?.value;
-  const visibility = document.getElementById('post-visibility')?.value;
-  const content = document.getElementById('post-content')?.value;
-  if (!content?.trim()) return;
-
-  const id = await publishPost({ type, content, visibility });
-  window.closeModal?.();
-  if (id) {
-    renderFeed();
-    // Mostra toast se disponível
-    const toastEl = document.getElementById('toast');
-    if (toastEl) { toastEl.textContent = '✅ Post publicado!'; toastEl.classList.add('show'); setTimeout(() => toastEl.classList.remove('show'), 2500); }
-  }
-};
+module.exports = { onPostCreated, onPostReportCountUpdated };
