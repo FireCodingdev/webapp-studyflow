@@ -227,7 +227,49 @@ Regras:
 - Não invente datas — use apenas o que estiver claramente visível
 `;
 
-    const prompt = mode === 'exams' ? EXAMS_PROMPT : SCHEDULE_PROMPT;
+    const SYLLABI_PROMPT = `
+Você é um assistente especializado em ler cronogramas de aulas detalhados de faculdades/universidades.
+Analise esta imagem de cronograma de aulas (plano de ensino / programa de disciplina) e extraia TODAS as informações de cada aula.
+
+Retorne APENAS um JSON válido (sem markdown, sem explicações) com este formato:
+{
+  "disciplina": "Nome completo da disciplina",
+  "professor": "Nome do professor ou null",
+  "turno": "Noturno ou Diurno ou null",
+  "periodo": "Período/semestre ou null",
+  "aulas": [
+    {
+      "numeros": "1-2",
+      "data": "2026-02-04",
+      "tipo": "Aula",
+      "conteudo": "Descrição do conteúdo programado da aula",
+      "referencia": "Referência bibliográfica indicada ou null",
+      "horario_inicio": "20:30",
+      "horario_fim": "22:10"
+    }
+  ],
+  "avaliacoes": [
+    {
+      "nome": "1ª Avaliação",
+      "data": "2026-04-08",
+      "tipo": "Prova",
+      "descricao": "Descrição adicional ou null"
+    }
+  ],
+  "observacoes": "Observações gerais ou null"
+}
+
+Regras:
+- "data" SEMPRE no formato ISO: YYYY-MM-DD
+- "tipo" de aula pode ser: "Aula", "Exercício", "Revisão", "Apresentação", "Outro"
+- "tipo" de avaliação pode ser: "Prova", "Trabalho", "Apresentação", "Avaliação Final", "Substitutiva"
+- Se uma célula estiver vazia, traço ou não visível, use null
+- Extraia TODAS as aulas sem exceção, mesmo repetidas
+- Se a imagem não for um cronograma de aulas de faculdade, retorne: {"erro": "Imagem não reconhecida como cronograma de aulas"}
+- Não invente datas ou conteúdos — use APENAS o que estiver claramente visível
+`;
+
+    const prompt = mode === 'exams' ? EXAMS_PROMPT : mode === 'syllabi' ? SYLLABI_PROMPT : SCHEDULE_PROMPT;
 
     const geminiBody = {
       contents: [{
