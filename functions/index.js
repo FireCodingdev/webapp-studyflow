@@ -46,7 +46,7 @@ exports.geminiProxy = onRequest(
     }
 
     // ── 3. Valida o body da requisição ─────────────────────────────────────
-    const { imageBase64, mimeType } = req.body;
+    const { imageBase64, mimeType, mode = 'schedule' } = req.body;
 
     if (!imageBase64 || !mimeType) {
       return res.status(400).json({ error: 'imageBase64 e mimeType são obrigatórios' });
@@ -87,10 +87,37 @@ Regras:
 - Não invente informações que não estejam claramente visíveis na imagem
 `;
 
+    const EXAMS_PROMPT = `
+Você é um assistente especializado em ler calendários acadêmicos com datas de provas.
+Analise esta imagem e extraia TODAS as provas/avaliações listadas.
+
+Retorne APENAS um JSON válido (sem markdown, sem explicações) com este formato:
+{
+  "provas": [
+    {
+      "materia": "Nome da disciplina/matéria",
+      "tipo": "Prova 1",
+      "data": "2026-06-09"
+    }
+  ],
+  "observacoes": "Qualquer observação relevante, ou null"
+}
+
+Regras:
+- "data" SEMPRE no formato ISO: YYYY-MM-DD
+- "tipo" deve ser o nome da avaliação como aparece na imagem (ex: "Prova 1", "Prova 2", "Final", "Substitutiva")
+- Extraia TODAS as colunas de prova para CADA matéria — não pule nenhuma
+- Se uma célula estiver vazia ou com traço, ignore aquela entrada
+- Se a imagem não for um calendário de provas, retorne: {"erro": "Imagem não reconhecida como calendário de provas"}
+- Não invente datas — use apenas o que estiver claramente visível
+`;
+
+    const prompt = mode === 'exams' ? EXAMS_PROMPT : SCHEDULE_PROMPT;
+
     const geminiBody = {
       contents: [{
         parts: [
-          { text: SCHEDULE_PROMPT },
+          { text: prompt },
           { inline_data: { mime_type: mimeType, data: imageBase64 } },
         ],
       }],

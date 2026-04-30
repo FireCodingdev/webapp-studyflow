@@ -384,6 +384,226 @@ export function initIA(STATE, hooks) {
 
   // Injeta imediatamente se já estiver na página de cronograma
   injetarBotaoIA();
+
+  // ── Botão de provas na aba Atividades ──────────────────────────────────────
+  function injetarBotaoProvas() {
+    if (document.getElementById('ia-exams-btn')) return;
+
+    const tasksHeader = document.querySelector('#page-tasks .filter-tabs');
+    if (!tasksHeader) return;
+
+    const btn = document.createElement('button');
+    btn.id        = 'ia-exams-btn';
+    btn.className = 'ia-fab-btn';
+    btn.title     = 'Importar calendário de provas por foto';
+    btn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+        <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+        <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>
+      </svg>
+      <span>Importar provas</span>
+    `;
+    btn.addEventListener('click', () => abrirModalImportarProvas(STATE, hooks));
+    tasksHeader.insertAdjacentElement('afterend', btn);
+  }
+
+  // Observa mudanças de página para injetar o botão de provas
+  const observerProvas = new MutationObserver(() => {
+    const tasksPage = document.getElementById('page-tasks');
+    if (tasksPage?.classList.contains('active')) injetarBotaoProvas();
+  });
+  observerProvas.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
+  injetarBotaoProvas();
+}
+
+// ─── MODAL DE PROVAS ─────────────────────────────────────────────────────────
+export function abrirModalImportarProvas(STATE, hooks) {
+  const { openModal } = hooks;
+
+  openModal('📅 Importar Calendário de Provas', `
+    <div class="ia-upload-area" id="ia-exams-drop-zone">
+      <div class="ia-upload-icon">📋</div>
+      <p class="ia-upload-title">Foto do calendário de provas</p>
+      <p class="ia-upload-sub">A IA vai extrair todas as datas e criar as atividades automaticamente</p>
+      <input type="file" id="ia-exams-input-camera"  accept="image/*" capture="environment" style="display:none" />
+      <input type="file" id="ia-exams-input-gallery" accept="image/*" style="display:none" />
+      <div class="ia-upload-btns">
+        <button class="btn-primary ia-upload-btn" onclick="document.getElementById('ia-exams-input-camera').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          Tirar foto
+        </button>
+        <button class="btn-secondary ia-upload-btn ia-upload-btn-gallery" onclick="document.getElementById('ia-exams-input-gallery').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Escolher da galeria
+        </button>
+      </div>
+    </div>
+
+    <div id="ia-exams-preview-area" style="display:none">
+      <img id="ia-exams-preview-img" class="ia-preview-img" alt="Preview" />
+      <div id="ia-exams-status" class="ia-status"></div>
+      <div id="ia-exams-result-area" style="display:none"></div>
+    </div>
+  `);
+
+  setTimeout(() => {
+    const cam = document.getElementById('ia-exams-input-camera');
+    const gal = document.getElementById('ia-exams-input-gallery');
+    const drop = document.getElementById('ia-exams-drop-zone');
+
+    [cam, gal].forEach(input => {
+      input?.addEventListener('change', () => {
+        const file = input.files?.[0];
+        if (file) processarArquivoProvas(file, STATE, hooks);
+      });
+    });
+
+    drop?.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('ia-drag-over'); });
+    drop?.addEventListener('dragleave', () => drop.classList.remove('ia-drag-over'));
+    drop?.addEventListener('drop', e => {
+      e.preventDefault();
+      drop.classList.remove('ia-drag-over');
+      const file = e.dataTransfer?.files?.[0];
+      if (file?.type.startsWith('image/')) processarArquivoProvas(file, STATE, hooks);
+    });
+  }, 0);
+}
+
+async function processarArquivoProvas(file, STATE, hooks) {
+  const { closeModal, showToast } = hooks;
+
+  const dropZone    = document.getElementById('ia-exams-drop-zone');
+  const previewArea = document.getElementById('ia-exams-preview-area');
+  const previewImg  = document.getElementById('ia-exams-preview-img');
+  const statusEl    = document.getElementById('ia-exams-status');
+  const resultArea  = document.getElementById('ia-exams-result-area');
+  if (!previewArea || !statusEl) return;
+
+  previewImg.src            = URL.createObjectURL(file);
+  dropZone.style.display    = 'none';
+  previewArea.style.display = 'block';
+  setStatus(statusEl, 'analyzing', '🔍 Analisando calendário com IA...');
+
+  try {
+    // Chama o proxy com mode=exams
+    const base64   = await fileToBase64(file);
+    const mimeType = file.type || 'image/jpeg';
+    const { auth } = await import('./firebase.js');
+    const idToken  = await auth.currentUser?.getIdToken();
+    if (!idToken) throw new Error('Você precisa estar logado.');
+
+    const response = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+      body: JSON.stringify({ imageBase64: base64, mimeType, mode: 'exams' }),
+    });
+    const dadosIA = await response.json();
+    if (!response.ok) throw new Error(dadosIA?.error || `Erro HTTP ${response.status}`);
+    if (dadosIA.erro) throw new Error(dadosIA.erro);
+
+    const provas = dadosIA.provas || [];
+    if (provas.length === 0) {
+      setStatus(statusEl, 'error', '❌ Nenhuma prova encontrada na imagem.');
+      return;
+    }
+
+    setStatus(statusEl, 'success', `✅ ${provas.length} prova(s) encontrada(s)`);
+
+    resultArea.style.display = 'block';
+    resultArea.innerHTML = `
+      <div class="ia-extracted">
+        <h4 class="ia-section-title">Provas encontradas</h4>
+        <div class="ia-aulas-list">
+          ${provas.map(p => `
+            <div class="ia-aula-item">
+              <span class="ia-aula-nome">${p.materia}</span>
+              <span class="ia-aula-meta">${p.tipo} · ${formatarDataProva(p.data)}</span>
+            </div>
+          `).join('')}
+        </div>
+        ${dadosIA.observacoes ? `<p class="ia-obs">💡 ${dadosIA.observacoes}</p>` : ''}
+        <div class="ia-action-row">
+          <button class="btn-primary" id="ia-exams-confirm-btn">✅ Importar provas</button>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('ia-exams-confirm-btn')?.addEventListener('click', async () => {
+      setStatus(statusEl, 'analyzing', '💾 Criando atividades...');
+      resultArea.style.display = 'none';
+      try {
+        const { novas, duplicadas } = await aplicarProvasNoApp(provas, STATE, hooks);
+        closeModal();
+        const msg = [
+          novas > 0      ? `${novas} prova(s) criada(s)` : '',
+          duplicadas > 0 ? `${duplicadas} já existiam` : '',
+        ].filter(Boolean).join(' · ');
+        showToast(`🎉 Importado! ${msg}`);
+        hooks.navigateTo?.('tasks');
+      } catch (err) {
+        setStatus(statusEl, 'error', `❌ Erro ao salvar: ${err.message}`);
+        resultArea.style.display = 'block';
+      }
+    });
+
+  } catch (err) {
+    setStatus(statusEl, 'error', `❌ ${err.message}`);
+    resultArea.style.display = 'block';
+    resultArea.innerHTML = `
+      <div class="ia-action-row" style="margin-top:8px">
+        <button class="btn-primary" onclick="document.getElementById('ia-exams-input-gallery').click()">Tentar novamente</button>
+      </div>`;
+  }
+}
+
+async function aplicarProvasNoApp(provas, STATE, hooks) {
+  const { save, renderTasks, renderDashboard } = hooks;
+  let novas = 0, duplicadas = 0;
+
+  for (const p of provas) {
+    if (!p.materia || !p.data) continue;
+
+    // Verifica duplicata: mesma matéria + mesmo tipo + mesma data
+    const jáExiste = STATE.tasks.some(t =>
+      t.source === 'ia-exams' &&
+      t.title === `${p.tipo} — ${p.materia}` &&
+      t.deadline === p.data
+    );
+    if (jáExiste) { duplicadas++; continue; }
+
+    // Tenta associar a uma matéria existente
+    const subject = STATE.subjects.find(s =>
+      p.materia.toLowerCase().includes(s.name.toLowerCase()) ||
+      s.name.toLowerCase().includes(p.materia.toLowerCase())
+    );
+
+    STATE.tasks.push({
+      id:           `ia_exam_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
+      title:        `${p.tipo} — ${p.materia}`,
+      subjectId:    subject?.id    || null,
+      subjectName:  subject?.name  || p.materia,
+      subjectColor: subject?.color || '#ff6584',
+      type:         'exam',
+      deadline:     p.data,
+      notes:        null,
+      done:         false,
+      createdAt:    new Date().toISOString(),
+      source:       'ia-exams',
+    });
+    novas++;
+  }
+
+  await save();
+  renderTasks();
+  renderDashboard();
+  return { novas, duplicadas };
+}
+
+function formatarDataProva(isoDate) {
+  if (!isoDate) return '?';
+  try {
+    return new Date(isoDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch { return isoDate; }
 }
 
 // ─── CSS INJETADO DINAMICAMENTE ───────────────────────────────────────────────
