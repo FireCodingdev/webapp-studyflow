@@ -1,0 +1,84 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===== HELPER FUNCTIONS =====
+    function isAuth() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    // ===== REGRAS EXISTENTES (não alteradas) =====
+
+    // Dados de estudo do usuário (subjects, tasks, flashcards, classes)
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+
+      // Perfil acadêmico público — NOVO
+      match /profile/{doc} {
+        allow read: if isAuth();         // qualquer usuário logado pode ler
+        allow write: if isOwner(uid);   // só o próprio usuário escreve
+      }
+    }
+
+    // Perfis básicos para busca de destinatário de cards (já existia)
+    match /user_profiles/{uid} {
+      allow read: if isAuth();
+      allow write: if isOwner(uid);
+    }
+
+    // ===== NOVAS REGRAS — SOCIAL =====
+
+    // Posts do feed
+    match /posts/{postId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0
+        && request.resource.data.content.size() <= 2000;
+      // Permite atualizar likes, replies e reportCount por qualquer usuário logado
+      allow update: if isAuth() && (
+        // Só pode mudar likes, replies, reportCount — não pode trocar authorId/content
+        !('authorId' in request.resource.data.diff(resource.data).affectedKeys()) &&
+        !('content'  in request.resource.data.diff(resource.data).affectedKeys())
+      );
+      // Só o autor pode deletar
+      allow delete: if isAuth() && resource.data.authorId == request.auth.uid;
+    }
+
+    // Conexões (following/followers)
+    match /connections/{uid} {
+      allow read: if isAuth();
+      allow write: if isOwner(uid);
+    }
+
+    // Grupos / Salas
+    match /groups/{groupId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      // Permite atualizar apenas se usuário é membro ou criador
+      allow update: if isAuth() && (
+        resource.data.createdBy == request.auth.uid ||
+        request.auth.uid in resource.data.members
+      );
+      allow delete: if isAuth() && resource.data.createdBy == request.auth.uid;
+    }
+
+    // Notificações — usuário só acessa as próprias
+    match /notifications/{uid}/items/{notifId} {
+      allow read, write: if isOwner(uid);
+      // Permite criar notificações para outros (ex: follow, like)
+      allow create: if isAuth();
+    }
+
+    // Denúncias — qualquer usuário pode criar, só admins lêem (sem admin SDK aqui)
+    match /reports/{reportId} {
+      allow create: if isAuth();
+      allow read: if false; // apenas via Admin SDK / Cloud Functions
+      allow update, delete: if false;
+    }
+  }
+}

@@ -11,6 +11,9 @@ import {
 
 import { initIA } from './ia.js';
 import { initClassroom, renderPostsClassroom } from './classroom.js';
+import { initFeed, renderFeed } from './social/feed.js';
+import { initRealtimeNotifications, stopRealtimeNotifications } from './social/notifications-rt.js';
+import { checkAchievements, showAchievementToast } from './components/achievement-toast.js';
 
 // ===== STATE =====
 // Helper: busca cor atual da matéria por id, com fallback por nome
@@ -349,6 +352,8 @@ async function initAppForUser(user) {
   }
 
   showMainApp();
+  initRealtimeNotifications(user.uid);
+  checkAchievements(STATE);
 }
 
 function showAuthScreen() {
@@ -392,6 +397,7 @@ function showMainApp() {
 
   // Integração com Google Classroom (polling ao abrir o app)
   initClassroom(STATE, { save, renderTasks, renderDashboard, showToast });
+  initFeed(STATE, { save, showToast, navigateTo: window.navigateTo });
 }
 
 // ===== AUTH HANDLERS =====
@@ -517,7 +523,7 @@ window.navigateTo = function(page) {
   document.getElementById(`page-${page}`).classList.add('active');
   const navEl = document.querySelector(`[data-page="${page}"]`);
   if (navEl) navEl.classList.add('active');
-  const titles = { dashboard: 'Dashboard', schedule: 'Cronograma', tasks: 'Atividades', flashcards: 'Flashcards', links: 'Materiais & Links' };
+  const titles = { dashboard: 'Dashboard', schedule: 'Cronograma', tasks: 'Atividades', flashcards: 'Flashcards', links: 'Materiais & Links', feed: 'Feed Social', social: 'Comunidade' 
   document.getElementById('page-title').textContent = titles[page] || page;
   STATE.currentPage = page;
   
@@ -525,7 +531,9 @@ window.navigateTo = function(page) {
   if (page === 'schedule') renderSchedule();
   if (page === 'tasks') renderTasks();
   if (page === 'flashcards') renderFlashcards();
-  if (page === 'links') {
+  if (page === 'links') 
+  if (page === 'feed') window._renderFeed?.();
+  if (page === 'social') window._renderSocialPage?.();{
     renderLinks();
     // Exibe posts do Classroom se o usuário já estiver conectado
     window._renderPostsClassroom?.();
@@ -2121,11 +2129,22 @@ window.openAccsSection = function(section) {
     notifications: 'Notificações',
     data: 'Dados e Armazenamento',
     appearance: 'Aparência',
+    academic: 'Perfil Acadêmico',        // NOVO
   };
   const user = STATE.currentUser;
   const name = user?.displayName || user?.email?.split('@')[0] || 'Usuário';
 
   document.getElementById('accs-sub-title').textContent = titles[section] || section;
+
+  // ===== NOVO: Perfil Acadêmico =====
+  if (section === 'academic') {
+    document.getElementById('accs-sub-panel').classList.add('open');
+    import('./social/profile.js').then(({ renderAcademicProfileSection }) => {
+      renderAcademicProfileSection(user?.uid);
+    });
+    return;
+  }
+  // ===================================
 
   let body = '';
 

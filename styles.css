@@ -2198,3 +2198,430 @@ a { color: inherit; text-decoration: none; }
 @media (min-width: 600px) {
   .accs-panel { border-right: 1px solid var(--border); }
 }
+
+/* ─── FEED DE POSTS ─────────────────────────────────── */
+.feed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.feed-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+.feed-new-btn {
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 20px;
+}
+.feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.feed-loading,
+.feed-empty {
+  text-align: center;
+  color: var(--text-muted, #888);
+  padding: 32px 16px;
+  font-size: 14px;
+}
+ 
+/* ─── POST CARD ─────────────────────────────────────── */
+.post-card {
+  background: var(--card-bg, var(--surface));
+  border-radius: 14px;
+  padding: 16px;
+  border: 1px solid var(--border, rgba(255,255,255,0.07));
+  transition: box-shadow 0.2s;
+}
+.post-card:hover {
+  box-shadow: 0 4px 18px rgba(0,0,0,0.12);
+}
+.post-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.post-card-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent, #6c63ff);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.post-card-meta {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.post-card-author {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.post-card-date {
+  font-size: 11px;
+  color: var(--text-muted, #888);
+}
+.post-card-type-badge {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: var(--accent, #6c63ff)22;
+  color: var(--accent, #6c63ff);
+  flex-shrink: 0;
+  font-weight: 600;
+}
+.post-card-body {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.55;
+  margin-bottom: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.post-card-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.post-action-btn {
+  background: none;
+  border: 1px solid var(--border, rgba(255,255,255,0.10));
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.post-action-btn:hover {
+  background: var(--accent, #6c63ff)15;
+  color: var(--accent, #6c63ff);
+}
+.post-report-btn {
+  margin-left: auto;
+  color: #ff4757;
+  border-color: #ff475722;
+}
+.post-report-btn:hover {
+  background: #ff475715;
+  color: #ff4757;
+}
+ 
+ 
+/* ─── USER CARD ─────────────────────────────────────── */
+.user-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card-bg, var(--surface));
+  border-radius: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, rgba(255,255,255,0.07));
+  margin-bottom: 8px;
+}
+.user-card-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent, #6c63ff), #ff6584);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.user-card-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.user-card-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-card-inst,
+.user-card-course {
+  font-size: 11px;
+  color: var(--text-muted, #888);
+}
+.user-card-btn {
+  background: var(--accent, #6c63ff);
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+.user-card-btn:hover { opacity: 0.85; }
+.user-card-btn.btn-secondary {
+  background: var(--border, rgba(255,255,255,0.10));
+  color: var(--text-muted, #888);
+}
+ 
+ 
+/* ─── GROUP CARD ─────────────────────────────────────── */
+.group-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card-bg, var(--surface));
+  border-radius: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, rgba(255,255,255,0.07));
+  margin-bottom: 8px;
+}
+.group-card-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 2px;
+}
+.group-card-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+}
+.group-card-subject {
+  font-size: 12px;
+  color: var(--accent, #6c63ff);
+  font-weight: 500;
+}
+.group-card-inst,
+.group-card-members {
+  font-size: 11px;
+  color: var(--text-muted, #888);
+}
+.groups-header,
+.discover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.groups-title,
+.discover-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+ 
+ 
+/* ─── SOCIAL TABS ────────────────────────────────────── */
+.social-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.social-tabs::-webkit-scrollbar { display: none; }
+.social-tab-btn {
+  background: none;
+  border: 1.5px solid var(--border, rgba(255,255,255,0.10));
+  border-radius: 20px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.social-tab-btn.active {
+  background: var(--accent, #6c63ff);
+  color: #fff;
+  border-color: var(--accent, #6c63ff);
+}
+.social-tab-pane {
+  display: none;
+}
+.social-tab-pane.active {
+  display: block;
+}
+ 
+ 
+/* ─── NOTIFICAÇÕES ───────────────────────────────────── */
+.notif-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #ff4757;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 20px;
+  padding: 1px 5px;
+  min-width: 16px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+}
+.notif-panel-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 14px;
+}
+.notif-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.notif-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--card-bg, var(--surface));
+  border: 1px solid var(--border, rgba(255,255,255,0.07));
+  cursor: pointer;
+  position: relative;
+}
+.notif-item.notif-unread {
+  background: var(--accent, #6c63ff)0f;
+  border-color: var(--accent, #6c63ff)33;
+}
+.notif-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.notif-label {
+  font-size: 13px;
+  color: var(--text);
+  flex: 1;
+}
+.notif-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #6c63ff);
+  flex-shrink: 0;
+}
+ 
+ 
+/* ─── ACHIEVEMENT TOAST ──────────────────────────────── */
+.achievement-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: linear-gradient(135deg, #ffd700, #ffaa00);
+  color: #1a1a1a;
+  border-radius: 16px;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 8px 30px rgba(255,170,0,0.4);
+  z-index: 9999;
+  max-width: 320px;
+  width: calc(100% - 40px);
+  transition: transform 0.4s cubic-bezier(.34,1.56,.64,1), opacity 0.3s;
+  opacity: 0;
+  pointer-events: none;
+}
+.achievement-toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+.achievement-toast-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+.achievement-toast-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.achievement-toast-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.75;
+}
+.achievement-toast-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+.achievement-toast-xp {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a1a1a;
+  background: rgba(255,255,255,0.4);
+  border-radius: 20px;
+  padding: 1px 8px;
+  width: fit-content;
+}
+ 
+ 
+/* ─── SKILL BADGES ───────────────────────────────────── */
+.skill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 3px;
+  transition: opacity 0.15s;
+}
+.skill-badge-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.7;
+  padding: 0 0 0 2px;
+}
+.skill-badge-remove:hover { opacity: 1; }
+.skill-badge-empty {
+  font-size: 12px;
+  color: var(--text-muted, #888);
+}
+ 
+ 
+/* ─── PERFIL ACADÊMICO (form no painel de conta) ─────── */
+.social-profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0;
+}

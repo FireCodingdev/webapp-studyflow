@@ -332,3 +332,25 @@ Regras:
     }
   }
 );
+// ===== FUNCTIONS/INDEX.JS — ADIÇÕES =====
+// Cole este bloco ao FINAL do functions/index.js existente.
+// Não altera nenhuma export existente.
+//
+// Pré-requisito: npm install @google/generative-ai --save
+// no diretório /functions/
+
+const { onPostCreated, onPostReportCountUpdated } = require('./feed');
+const { suggestPeers, suggestGroups } = require('./recommendations');
+const { moderatePost, escalateReport } = require('./moderation');
+
+// ---- Exports novos — Feed ----
+exports.onPostCreated = onPostCreated;
+exports.onPostReportCountUpdated = onPostReportCountUpdated;
+
+// ---- Exports novos — Recomendações IA ----
+exports.suggestPeers = suggestPeers;
+exports.suggestGroups = suggestGroups;
+
+// ---- Exports novos — Moderação ----
+exports.moderatePost = moderatePost;
+exports.escalateReport = escalateReport;
