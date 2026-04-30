@@ -10,7 +10,7 @@ import {
 } from './firebase.js';
 
 import { initIA } from './ia.js';
-import { initClassroom } from './classroom.js';
+import { initClassroom, renderPostsClassroom } from './classroom.js';
 
 // ===== STATE =====
 const STATE = {
@@ -464,7 +464,11 @@ window.navigateTo = function(page) {
   if (page === 'schedule') renderSchedule();
   if (page === 'tasks') renderTasks();
   if (page === 'flashcards') renderFlashcards();
-  if (page === 'links') renderLinks();
+  if (page === 'links') {
+    renderLinks();
+    // Exibe posts do Classroom se o usuário já estiver conectado
+    window._renderPostsClassroom?.();
+  }
   closeSidebar();
 };
 

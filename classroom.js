@@ -52,6 +52,16 @@ export function initClassroom(STATE, hooks) {
   if (uid) {
     sincronizarSeConectado(uid);
   }
+
+  // Expõe para o navigateTo do app.js chamar ao entrar em Materiais
+  window._renderPostsClassroom = async () => {
+    if (!uid) return;
+    const snap = await getDoc(doc(db, 'users', uid));
+    const cl = snap?.data()?.classroom;
+    if (cl?.access_token && Date.now() < cl.expiresAt) {
+      renderPostsClassroom(cl.access_token);
+    }
+  };
 }
 
 // ─── OAUTH: CONECTAR ─────────────────────────────────────────────────────────
@@ -380,3 +390,233 @@ function injetarEstilosClassroom() {
 //    c. Em "Authorized redirect URIs" adicione:
 //       https://webapp-studyflow.pages.dev/classroom-callback.html
 //    d. Cole o CLIENT_ID gerado na constante CLASSROOM_CLIENT_ID acima
+
+// ─── POSTS DO CLASSROOM NA PÁGINA DE MATERIAIS ────────────────────────────────
+
+/**
+ * Busca os posts/avisos recentes de todas as turmas e renderiza
+ * numa seção extra no final da página de Materiais.
+ * Chamado pelo initClassroom quando o usuário já está conectado,
+ * e também ao navegar para a aba Materiais.
+ */
+export async function renderPostsClassroom(token) {
+  // Garante que o container existe (cria se não existir)
+  let section = document.getElementById('classroom-posts-section');
+  if (!section) {
+    const linksList = document.getElementById('links-list');
+    if (!linksList) return;
+
+    section = document.createElement('div');
+    section.id = 'classroom-posts-section';
+    linksList.insertAdjacentElement('afterend', section);
+  }
+
+  section.innerHTML = `
+    <div class="cl-posts-header">
+      <span class="cl-posts-title">📢 Posts recentes do Classroom</span>
+      <span class="cl-posts-loading">Carregando...</span>
+    </div>`;
+
+  try {
+    // 1. Busca turmas ativas
+    const cursosRes = await fetch(
+      'https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE&pageSize=20',
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!cursosRes.ok) throw new Error(`${cursosRes.status}`);
+    const { courses = [] } = await cursosRes.json();
+
+    // 2. Busca announcements de cada turma em paralelo
+    const todosPosts = (await Promise.all(
+      courses.map(c => buscarPostsDaTurma(c, token))
+    )).flat();
+
+    // Ordena por data decrescente e pega os 20 mais recentes
+    todosPosts.sort((a, b) => new Date(b.creationTime) - new Date(a.creationTime));
+    const recentes = todosPosts.slice(0, 20);
+
+    if (recentes.length === 0) {
+      section.innerHTML = `
+        <div class="cl-posts-header">
+          <span class="cl-posts-title">📢 Posts recentes do Classroom</span>
+        </div>
+        <p class="cl-posts-empty">Nenhum post encontrado nas turmas ativas.</p>`;
+      return;
+    }
+
+    section.innerHTML = `
+      <div class="cl-posts-header">
+        <span class="cl-posts-title">📢 Posts recentes do Classroom</span>
+        <span class="cl-posts-count">${recentes.length} post${recentes.length > 1 ? 's' : ''}</span>
+      </div>
+      ${recentes.map(renderPostCard).join('')}`;
+
+  } catch (err) {
+    console.error('[Classroom] Erro ao buscar posts:', err);
+    section.innerHTML = `
+      <div class="cl-posts-header">
+        <span class="cl-posts-title">📢 Posts recentes do Classroom</span>
+      </div>
+      <p class="cl-posts-empty">Erro ao carregar posts. Tente sincronizar novamente.</p>`;
+  }
+}
+
+async function buscarPostsDaTurma(curso, token) {
+  try {
+    const res = await fetch(
+      `https://classroom.googleapis.com/v1/courses/${curso.id}/announcements?pageSize=10&orderBy=updateTime+desc`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) return [];
+    const { announcements = [] } = await res.json();
+    return announcements.map(a => ({ ...a, _nomeTurma: curso.name, _corTurma: encontrarCorTurma(curso.name) }));
+  } catch {
+    return [];
+  }
+}
+
+function encontrarCorTurma(nomeTurma) {
+  if (!_STATE?.subjects?.length) return '#4285F4';
+  const turmaLower = nomeTurma.toLowerCase();
+  const match = _STATE.subjects.find(s => turmaLower.includes(s.name.toLowerCase()));
+  return match?.color || '#4285F4';
+}
+
+function renderPostCard(post) {
+  const data = post.updateTime
+    ? new Date(post.updateTime).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : '';
+
+  // Extrai links dos materiais anexados
+  const links = (post.materials || [])
+    .map(m => {
+      if (m.driveFile)  return { url: m.driveFile.driveFile?.alternateLink, label: m.driveFile.driveFile?.title || 'Arquivo Drive', icon: '📁' };
+      if (m.youtubeVideo) return { url: m.youtubeVideo.alternateLink, label: m.youtubeVideo.title || 'Vídeo YouTube', icon: '▶️' };
+      if (m.link)       return { url: m.link.url, label: m.link.title || m.link.url, icon: '🔗' };
+      if (m.form)       return { url: m.form.formUrl, label: m.form.title || 'Formulário', icon: '📋' };
+      return null;
+    })
+    .filter(Boolean);
+
+  const texto = post.text
+    ? `<p class="cl-post-text">${escapeHtmlPosts(post.text.slice(0, 200))}${post.text.length > 200 ? '…' : ''}</p>`
+    : '';
+
+  const linksHtml = links.length
+    ? `<div class="cl-post-links">${links.map(l =>
+        `<a class="cl-post-link" href="${l.url}" target="_blank" rel="noopener">
+          <span>${l.icon}</span>
+          <span>${escapeHtmlPosts(l.label)}</span>
+        </a>`).join('')}</div>`
+    : '';
+
+  return `
+    <div class="cl-post-card">
+      <div class="cl-post-card-top">
+        <span class="cl-post-turma" style="color:${post._corTurma}">${escapeHtmlPosts(post._nomeTurma)}</span>
+        <span class="cl-post-data">${data}</span>
+      </div>
+      ${texto}
+      ${linksHtml}
+    </div>`;
+}
+
+function escapeHtmlPosts(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// CSS dos posts — adicionado junto com os outros estilos do classroom
+(function injetarEstilosPostsClassroom() {
+  const existing = document.getElementById('classroom-styles');
+  const extra = `
+    /* ── Seção de posts do Classroom em Materiais ── */
+    #classroom-posts-section {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255,255,255,0.07);
+    }
+    .cl-posts-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .cl-posts-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text1, #fff);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .cl-posts-count, .cl-posts-loading {
+      font-size: 11px;
+      color: var(--text2, rgba(255,255,255,0.45));
+    }
+    .cl-posts-empty {
+      font-size: 13px;
+      color: var(--text2, rgba(255,255,255,0.45));
+      padding: 8px 0;
+    }
+    .cl-post-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+    }
+    .cl-post-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .cl-post-turma {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .cl-post-data {
+      font-size: 11px;
+      color: var(--text2, rgba(255,255,255,0.4));
+    }
+    .cl-post-text {
+      font-size: 13px;
+      color: var(--text1, #fff);
+      line-height: 1.5;
+      margin: 0 0 8px;
+      white-space: pre-wrap;
+    }
+    .cl-post-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .cl-post-link {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 10px;
+      background: rgba(66,133,244,0.1);
+      border: 1px solid rgba(66,133,244,0.25);
+      border-radius: 8px;
+      font-size: 12px;
+      color: rgba(66,133,244,0.95);
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+    .cl-post-link:hover { background: rgba(66,133,244,0.2); }
+  `;
+
+  if (existing) {
+    existing.textContent += extra;
+  } else {
+    const s = document.createElement('style');
+    s.id = 'classroom-posts-styles';
+    s.textContent = extra;
+    document.head.appendChild(s);
+  }
+})();
