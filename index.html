@@ -19,6 +19,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="styles.css" />
+  <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
 
@@ -104,19 +105,19 @@
 
       <div class="sidebar-nav">
         <button class="nav-item active" data-page="dashboard" onclick="navigateTo('dashboard')">
-          <span class="nav-icon">📊</span> Dashboard
+          <i data-lucide="layout-dashboard" class="nav-icon"></i> Dashboard
         </button>
         <button class="nav-item" data-page="schedule" onclick="navigateTo('schedule')">
-          <span class="nav-icon">📅</span> Cronograma
+          <i data-lucide="calendar" class="nav-icon"></i> Cronograma
         </button>
         <button class="nav-item" data-page="tasks" onclick="navigateTo('tasks')">
-          <span class="nav-icon">📝</span> Atividades
+          <i data-lucide="check-square" class="nav-icon"></i> Atividades
         </button>
         <button class="nav-item" data-page="flashcards" onclick="navigateTo('flashcards')">
-          <span class="nav-icon">🗂️</span> Flashcards
+          <i data-lucide="layers" class="nav-icon"></i> Flashcards
         </button>
         <button class="nav-item" data-page="links" onclick="navigateTo('links')">
-          <span class="nav-icon">🔗</span> Materiais
+          <i data-lucide="folder" class="nav-icon"></i> Materiais
         </button>
       </div>
 
@@ -287,6 +288,17 @@
   <div id="toast" class="toast">Mensagem salva!</div>
 
   <script type="module" src="app.js"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      lucide.createIcons();
+    });
+  </script>
+
+  <style>
+    .nav-icon svg { width: 16px; height: 16px; vertical-align: middle; }
+    .nav-icon { display: inline-flex; align-items: center; }
+  </style>
 
 </body>
 </html>
