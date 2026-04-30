@@ -37,6 +37,27 @@ function getSubjectColor(subjectId, subjectName, fallback) {
   return fallback || 'var(--accent)';
 }
 
+// Corrige tasks cujo subjectId não bate com nenhuma matéria salva,
+// usando busca bidirecional pelo subjectName para reencontrar a matéria correta.
+function fixTaskSubjects() {
+  if (!STATE.subjects.length || !STATE.tasks.length) return;
+  for (const task of STATE.tasks) {
+    // Já tem id válido? pula
+    if (task.subjectId && STATE.subjects.find(s => s.id === task.subjectId)) continue;
+    if (!task.subjectName) continue;
+    const nameLower = task.subjectName.toLowerCase();
+    const match = STATE.subjects.find(s => {
+      const sLower = s.name.toLowerCase();
+      return nameLower.includes(sLower) || sLower.includes(nameLower);
+    });
+    if (match) {
+      task.subjectId    = match.id;
+      task.subjectColor = match.color;
+      task.subjectName  = match.name;
+    }
+  }
+}
+
 const STATE = {
   subjects: [],
   classes: [],
@@ -126,6 +147,7 @@ function loadLocal() {
       STATE.classes = data.classes || [];
       STATE.tasks = data.tasks || [];
       STATE.flashcards = data.flashcards || [];
+      fixTaskSubjects();
       return true;
     } catch(e) {}
   }
@@ -278,6 +300,7 @@ async function initAppForUser(user) {
         STATE.classes = cloudData.classes || [];
         STATE.tasks = cloudData.tasks || [];
         STATE.flashcards = cloudData.flashcards || [];
+        fixTaskSubjects();
         saveLocal();
         loaded = true;
       } else {
