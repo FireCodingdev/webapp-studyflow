@@ -19,8 +19,8 @@ const CLASSROOM_SCOPES = [
   'https://www.googleapis.com/auth/classroom.announcements.readonly',
 ].join(' ');
 
-// URL da Firebase Function de proxy (ajuste se seu projeto tiver região diferente)
-const CLASSROOM_TOKEN_FUNCTION = 'https://us-central1-aplicativo-studyflow-4f501.cloudfunctions.net/classroomToken';
+// URL da Firebase Function de proxy
+const CLASSROOM_TOKEN_FUNCTION = 'https://classroomtoken-xesxvi757a-uc.a.run.app';
 
 // ─── ESTADO INTERNO ───────────────────────────────────────────────────────────
 let _STATE = null;
