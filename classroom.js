@@ -22,7 +22,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ─── CONFIGURAÇÃO ────────────────────────────────────────────────────────────
-const CLASSROOM_CLIENT_ID = 'SEU_CLIENT_ID_AQUI.apps.googleusercontent.com';
+const CLASSROOM_CLIENT_ID = '92968084905-1ete8rjlfs6e3uo3pj4h351bdm8ak947.apps.googleusercontent.com';
 const CLASSROOM_SCOPES = [
   'https://www.googleapis.com/auth/classroom.courses.readonly',
   'https://www.googleapis.com/auth/classroom.coursework.me.readonly',
