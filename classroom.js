@@ -222,6 +222,18 @@ function importarAtividades(atividades) {
   const idsExistentes = new Set(_STATE.tasks.map(t => t.classroomId).filter(Boolean));
   let novas = 0;
 
+  // Corrige tasks já importadas que ainda não têm subjectId válido
+  for (const task of _STATE.tasks) {
+    if (!task.classroomId) continue;
+    if (task.subjectId && _STATE.subjects.find(s => s.id === task.subjectId)) continue;
+    const subject = encontrarMateria(task.subjectName);
+    if (subject) {
+      task.subjectId    = subject.id;
+      task.subjectColor = subject.color;
+      task.subjectName  = subject.name;
+    }
+  }
+
   for (const cw of atividades) {
     if (idsExistentes.has(cw.id)) continue; // já importada
 
@@ -263,7 +275,10 @@ function importarAtividades(atividades) {
 function encontrarMateria(nomeTurma) {
   if (!nomeTurma || !_STATE.subjects?.length) return null;
   const turmaLower = nomeTurma.toLowerCase();
-  return _STATE.subjects.find(s => turmaLower.includes(s.name.toLowerCase())) || null;
+  return _STATE.subjects.find(s => {
+    const sLower = s.name.toLowerCase();
+    return turmaLower.includes(sLower) || sLower.includes(turmaLower);
+  }) || null;
 }
 
 // ─── BOTÃO INJETADO NA SIDEBAR ────────────────────────────────────────────────

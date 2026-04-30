@@ -15,10 +15,25 @@ import { initClassroom, renderPostsClassroom } from './classroom.js';
 // ===== STATE =====
 // Helper: busca cor atual da matéria por id, com fallback por nome
 function getSubjectColor(subjectId, subjectName, fallback) {
+  // 1. Busca exata por ID (mais confiável)
   const byId = STATE.subjects.find(s => s.id === subjectId);
   if (byId) return byId.color;
-  const byName = STATE.subjects.find(s => s.name === subjectName);
-  if (byName) return byName.color;
+
+  if (subjectName) {
+    const nameLower = subjectName.toLowerCase();
+
+    // 2. Busca exata por nome
+    const byExactName = STATE.subjects.find(s => s.name.toLowerCase() === nameLower);
+    if (byExactName) return byExactName.color;
+
+    // 3. Busca parcial bidirecional: nome da matéria contém o subjectName OU subjectName contém o nome da matéria
+    const byPartial = STATE.subjects.find(s => {
+      const sLower = s.name.toLowerCase();
+      return nameLower.includes(sLower) || sLower.includes(nameLower);
+    });
+    if (byPartial) return byPartial.color;
+  }
+
   return fallback || 'var(--accent)';
 }
 
