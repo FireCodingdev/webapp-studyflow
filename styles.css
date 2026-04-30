@@ -1990,3 +1990,208 @@ a { color: inherit; text-decoration: none; }
 [data-theme="dark"] [style*="color:var(--c"] {
   color: #7c6fff !important;
 }
+
+/* ===== SETTINGS GEAR BUTTON ===== */
+.settings-gear-btn {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text2);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, transform 0.3s;
+  flex-shrink: 0;
+}
+.settings-gear-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  transform: rotate(45deg);
+}
+.settings-gear-btn svg { width: 18px; height: 18px; }
+
+/* ===== ACCOUNT SETTINGS OVERLAY ===== */
+.accs-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 1100;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s;
+}
+.accs-overlay.active { opacity: 1; pointer-events: all; }
+
+/* ===== ACCOUNT SETTINGS PANEL ===== */
+.accs-panel {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; max-width: 420px;
+  height: 100%;
+  background: var(--bg2);
+  z-index: 1200;
+  transform: translateX(-100%);
+  transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.accs-panel.open { transform: translateX(0); }
+.accs-panel.accs-sub { z-index: 1300; }
+
+.accs-header {
+  padding: 20px 20px 24px;
+  background: var(--accent);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  position: relative;
+}
+
+.accs-close-btn {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,0.9);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.accs-close-btn:hover { background: rgba(255,255,255,0.15); }
+.accs-close-btn svg { width: 20px; height: 20px; }
+
+.accs-avatar-wrap {
+  position: relative;
+  margin-top: 4px;
+}
+.accs-avatar {
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.25);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; font-weight: 800;
+  color: #fff;
+  overflow: hidden;
+}
+.accs-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.accs-avatar-edit {
+  position: absolute; bottom: 0; right: 0;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--bg2);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  border: 2px solid var(--accent);
+}
+.accs-avatar-edit svg { width: 13px; height: 13px; color: var(--accent); }
+
+.accs-display-name {
+  font-size: 20px; font-weight: 700; color: #fff;
+}
+.accs-email-display {
+  font-size: 13px; color: rgba(255,255,255,0.8);
+}
+.accs-username-tag {
+  font-size: 12px; color: rgba(255,255,255,0.7);
+}
+
+.accs-list {
+  padding: 8px 0;
+}
+.accs-item {
+  display: flex; align-items: center;
+  gap: 14px;
+  padding: 14px 20px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.accs-item:hover { background: var(--accent-soft); }
+.accs-item-icon {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.accs-item-icon svg { width: 20px; height: 20px; stroke: #fff; }
+.accs-item-text { display: flex; flex-direction: column; flex: 1; }
+.accs-item-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.accs-item-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.accs-chevron { width: 16px; height: 16px; color: var(--text2); flex-shrink: 0; }
+.accs-divider { height: 8px; background: var(--bg); }
+
+/* Sub-panel */
+.accs-sub-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  position: sticky; top: 0; z-index: 1;
+}
+.accs-sub-title { font-size: 18px; font-weight: 700; color: var(--text); }
+.accs-sub-body { padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+
+/* Sub-panel form elements */
+.accs-field { display: flex; flex-direction: column; gap: 6px; }
+.accs-field label { font-size: 12px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
+.accs-field input, .accs-field textarea {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 14px;
+  font-size: 15px; color: var(--text);
+  outline: none; transition: border 0.2s;
+  font-family: inherit;
+}
+.accs-field input:focus, .accs-field textarea:focus { border-color: var(--accent); }
+.accs-field textarea { resize: vertical; min-height: 80px; }
+
+.accs-save-btn {
+  background: var(--accent); color: #fff;
+  border-radius: 12px; padding: 13px;
+  font-size: 15px; font-weight: 600;
+  cursor: pointer; transition: opacity 0.2s, transform 0.15s;
+  margin-top: 4px;
+}
+.accs-save-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+
+.accs-info-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 0; border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.accs-info-row span:first-child { color: var(--text2); }
+.accs-info-row span:last-child { color: var(--text); font-weight: 500; }
+
+.accs-section-card {
+  background: var(--bg); border-radius: 14px; padding: 16px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+
+.accs-danger-btn {
+  background: transparent; border: 1.5px solid #e05252;
+  color: #e05252; border-radius: 12px; padding: 12px;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: background 0.2s;
+}
+.accs-danger-btn:hover { background: rgba(224,82,82,0.1); }
+
+.accs-toggle-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 0;
+}
+.accs-toggle-row span { font-size: 14px; color: var(--text); }
+.accs-toggle {
+  width: 44px; height: 24px;
+  background: var(--border); border-radius: 12px;
+  position: relative; cursor: pointer; transition: background 0.2s;
+}
+.accs-toggle.on { background: var(--accent); }
+.accs-toggle::after {
+  content: ''; position: absolute;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; top: 3px; left: 3px;
+  transition: left 0.2s;
+}
+.accs-toggle.on::after { left: 23px; }
+
+@media (min-width: 600px) {
+  .accs-panel { border-right: 1px solid var(--border); }
+}

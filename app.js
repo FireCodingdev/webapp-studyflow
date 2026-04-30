@@ -283,6 +283,12 @@ async function initAppForUser(user) {
   if (avatarEl) avatarEl.textContent = initials;
   if (nameEl) nameEl.textContent = name;
 
+  // Restore cached avatar photo if available
+  const cachedPhoto = localStorage.getItem('accs_avatar_' + user.uid);
+  if (cachedPhoto && avatarEl) {
+    avatarEl.innerHTML = `<img src="${cachedPhoto}" style="width:100%;height:100%;border-radius:50%;object-fit:cover" alt="avatar">`;
+  }
+
   // Salva perfil público para sistema de busca de destinatário (envio de cards)
   try {
     const { setDoc: _setDoc, doc: _doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
@@ -2073,5 +2079,247 @@ window.setTheme = function(theme) {
   document.addEventListener('DOMContentLoaded', () => {
     const btn = document.querySelector(`.theme-btn[data-theme="${saved}"]`);
     if (btn) btn.classList.add('active');
+  });
+})();
+// ===== ACCOUNT SETTINGS PANEL =====
+window.openAccountSettings = function() {
+  const user = STATE.currentUser;
+  if (!user) return;
+  const name = user.displayName || user.email?.split('@')[0] || 'Usuário';
+  const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2);
+
+  // Update header info
+  const avatarEl = document.getElementById('accs-avatar');
+  if (avatarEl) {
+    if (user.photoURL) {
+      avatarEl.innerHTML = `<img src="${user.photoURL}" alt="avatar">`;
+    } else {
+      avatarEl.textContent = initials;
+    }
+  }
+  const dn = document.getElementById('accs-display-name');
+  if (dn) dn.textContent = name;
+  const em = document.getElementById('accs-email-display');
+  if (em) em.textContent = user.email || '';
+  const ut = document.getElementById('accs-username-tag');
+  if (ut) ut.textContent = '@' + name.toLowerCase().replace(/\s+/g, '').slice(0,16);
+
+  document.getElementById('account-settings-overlay').classList.add('active');
+  document.getElementById('account-settings-panel').classList.add('open');
+};
+
+window.closeAccountSettings = function() {
+  document.getElementById('account-settings-overlay').classList.remove('active');
+  document.getElementById('account-settings-panel').classList.remove('open');
+  closeAccsSection();
+};
+
+window.openAccsSection = function(section) {
+  const titles = {
+    account: 'Conta',
+    privacy: 'Privacidade e Segurança',
+    notifications: 'Notificações',
+    data: 'Dados e Armazenamento',
+    appearance: 'Aparência',
+  };
+  const user = STATE.currentUser;
+  const name = user?.displayName || user?.email?.split('@')[0] || 'Usuário';
+
+  document.getElementById('accs-sub-title').textContent = titles[section] || section;
+
+  let body = '';
+
+  if (section === 'account') {
+    body = `
+      <div class="accs-field">
+        <label>Nome de Exibição</label>
+        <input id="accs-inp-name" type="text" value="${escapeHtml(name)}" placeholder="Seu nome">
+      </div>
+      <div class="accs-field">
+        <label>E-mail</label>
+        <input type="text" value="${escapeHtml(user?.email || '')}" disabled style="opacity:0.6;cursor:not-allowed">
+      </div>
+      <div class="accs-field">
+        <label>Bio / Sobre mim</label>
+        <textarea id="accs-inp-bio" placeholder="Conte um pouco sobre você...">${escapeHtml(localStorage.getItem('accs_bio') || '')}</textarea>
+      </div>
+      <button class="accs-save-btn" onclick="saveAccsAccount()">Salvar Alterações</button>
+    `;
+  } else if (section === 'privacy') {
+    body = `
+      <div class="accs-section-card">
+        <div class="accs-info-row"><span>E-mail verificado</span><span>${user?.emailVerified ? '✅ Sim' : '⚠️ Não'}</span></div>
+        <div class="accs-info-row"><span>UID da Conta</span><span style="font-size:11px;word-break:break-all">${user?.uid || '-'}</span></div>
+        <div class="accs-info-row"><span>Provedor</span><span>${user?.providerData?.[0]?.providerId || 'email'}</span></div>
+      </div>
+      <div class="accs-field" style="margin-top:8px">
+        <label>Nova Senha</label>
+        <input id="accs-inp-pass" type="password" placeholder="Nova senha (mín. 6 caracteres)">
+      </div>
+      <button class="accs-save-btn" onclick="saveAccsPassword()">Alterar Senha</button>
+      <button class="accs-danger-btn" onclick="confirmDeleteAccount()">Excluir Conta</button>
+    `;
+  } else if (section === 'notifications') {
+    const notifOn = localStorage.getItem('accs_notif') !== 'off';
+    body = `
+      <div class="accs-section-card">
+        <div class="accs-toggle-row">
+          <span>Notificações de Tarefas</span>
+          <div class="accs-toggle ${notifOn ? 'on' : ''}" id="accs-toggle-notif" onclick="toggleAccsNotif()"></div>
+        </div>
+        <div class="accs-toggle-row">
+          <span>Alertas de Vencimento</span>
+          <div class="accs-toggle on" id="accs-toggle-deadline" onclick="this.classList.toggle('on')"></div>
+        </div>
+        <div class="accs-toggle-row">
+          <span>Som de Notificação</span>
+          <div class="accs-toggle" id="accs-toggle-sound" onclick="this.classList.toggle('on')"></div>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--text2)">As notificações funcionam apenas quando o app está aberto ou instalado como PWA.</p>
+    `;
+  } else if (section === 'data') {
+    const lsSize = new Blob([JSON.stringify(localStorage)]).size;
+    body = `
+      <div class="accs-section-card">
+        <div class="accs-info-row"><span>Armazenamento Local</span><span>${(lsSize/1024).toFixed(1)} KB</span></div>
+        <div class="accs-info-row"><span>Matérias</span><span>${STATE.subjects.length}</span></div>
+        <div class="accs-info-row"><span>Tarefas</span><span>${STATE.tasks.length}</span></div>
+        <div class="accs-info-row"><span>Flashcards</span><span>${STATE.flashcards.length}</span></div>
+      </div>
+      <button class="accs-save-btn" onclick="exportAccsData()">📤 Exportar Meus Dados</button>
+      <button class="accs-danger-btn" onclick="clearAccsCache()">🗑️ Limpar Cache Local</button>
+    `;
+  } else if (section === 'appearance') {
+    body = `
+      <p style="font-size:14px;color:var(--text2);margin-bottom:4px">Tema do Aplicativo</p>
+      <div class="accs-section-card">
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          ${[
+            {key:'default',label:'Colorido',grad:'linear-gradient(135deg,#6c63ff,#ff6584)'},
+            {key:'dark',label:'Dark',grad:'linear-gradient(135deg,#18181b,#a0a0b0)'},
+            {key:'light',label:'Light',grad:'linear-gradient(135deg,#f5f5f4,#44403c)'},
+          ].map(t => `
+            <button onclick="setTheme('${t.key}');this.parentNode.querySelectorAll('button').forEach(b=>b.style.outline='none');this.style.outline='2px solid var(--accent)'"
+              style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 14px;border-radius:12px;background:var(--bg);cursor:pointer;transition:background 0.2s">
+              <span style="width:36px;height:36px;border-radius:50%;background:${t.grad};display:block"></span>
+              <span style="font-size:12px;color:var(--text)">${t.label}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  document.getElementById('accs-sub-body').innerHTML = body;
+  document.getElementById('accs-sub-panel').classList.add('open');
+};
+
+window.closeAccsSection = function() {
+  document.getElementById('accs-sub-panel')?.classList.remove('open');
+};
+
+window.saveAccsAccount = async function() {
+  const newName = document.getElementById('accs-inp-name')?.value?.trim();
+  const bio = document.getElementById('accs-inp-bio')?.value?.trim();
+  const user = STATE.currentUser;
+  if (!user) return;
+  try {
+    const { updateProfile } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+    if (newName) await updateProfile(user, { displayName: newName });
+    if (bio !== undefined) localStorage.setItem('accs_bio', bio);
+    // refresh sidebar
+    const name = newName || user.displayName || user.email.split('@')[0];
+    const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2);
+    const sidebarAvatar = document.getElementById('sidebar-avatar');
+    const sidebarName = document.getElementById('sidebar-name');
+    if (sidebarAvatar) sidebarAvatar.textContent = initials;
+    if (sidebarName) sidebarName.textContent = name;
+    document.getElementById('accs-display-name').textContent = name;
+    showToast('✅ Perfil atualizado!');
+    closeAccsSection();
+  } catch(e) {
+    showToast('Erro ao salvar: ' + e.message);
+  }
+};
+
+window.saveAccsPassword = async function() {
+  const pass = document.getElementById('accs-inp-pass')?.value;
+  if (!pass || pass.length < 6) { showToast('Senha deve ter no mínimo 6 caracteres'); return; }
+  try {
+    const { updatePassword } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+    await updatePassword(STATE.currentUser, pass);
+    showToast('✅ Senha alterada com sucesso!');
+  } catch(e) {
+    showToast('Erro: ' + e.message);
+  }
+};
+
+window.confirmDeleteAccount = function() {
+  if (confirm('Tem certeza que deseja EXCLUIR sua conta? Esta ação não pode ser desfeita.')) {
+    STATE.currentUser?.delete()
+      .then(() => { showToast('Conta excluída.'); })
+      .catch(e => showToast('Erro: ' + e.message));
+  }
+};
+
+window.toggleAccsNotif = function() {
+  const el = document.getElementById('accs-toggle-notif');
+  el.classList.toggle('on');
+  localStorage.setItem('accs_notif', el.classList.contains('on') ? 'on' : 'off');
+};
+
+window.exportAccsData = function() {
+  const data = {
+    exportDate: new Date().toISOString(),
+    subjects: STATE.subjects,
+    classes: STATE.classes,
+    tasks: STATE.tasks,
+    flashcards: STATE.flashcards,
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `studyflow_backup_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  showToast('📤 Dados exportados!');
+};
+
+window.clearAccsCache = function() {
+  if (confirm('Limpar cache local? Os dados na nuvem serão mantidos.')) {
+    localStorage.removeItem('studyflow_v3');
+    localStorage.removeItem('studyflow_v2');
+    showToast('🗑️ Cache limpo! Recarregue para sincronizar.');
+  }
+};
+
+window.handleAvatarUpload = async function(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const user = STATE.currentUser;
+  if (!user) return;
+  try {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const dataUrl = e.target.result;
+      // Update UI immediately
+      const accsAvatar = document.getElementById('accs-avatar');
+      if (accsAvatar) accsAvatar.innerHTML = `<img src="${dataUrl}" alt="avatar">`;
+      const sidebarAvatar = document.getElementById('sidebar-avatar');
+      if (sidebarAvatar) { sidebarAvatar.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;border-radius:50%;object-fit:cover" alt="avatar">`; }
+      // Save to localStorage as fallback (Firebase Storage not available in all plans)
+      localStorage.setItem('accs_avatar_' + user.uid, dataUrl);
+      showToast('✅ Foto de perfil atualizada!');
+    };
+    reader.readAsDataURL(file);
+  } catch(e) {
+    showToast('Erro ao carregar foto: ' + e.message);
+  }
+};
+
+// Restore avatar from localStorage on init
+(function restoreAvatar() {
+  document.addEventListener('DOMContentLoaded', () => {
+    // done on initAppForUser after auth
   });
 })();
