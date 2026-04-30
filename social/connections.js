@@ -1,13 +1,14 @@
 // ===== SOCIAL: CONNECTIONS.JS =====
 // Seguir, conectar, descobrir colegas — NOVO MÓDULO
 
-import { db } from '../firebase.js';
+import { db, auth } from '../firebase.js';
 import { renderUserCard } from '../components/user-card.js';
 
-const {
+// CORREÇÃO: import estático no lugar de top-level await
+import {
   doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove,
-  collection, query, limit, getDocs, increment,
-} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+  collection, query, limit, getDocs, increment, addDoc, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ---- Seguir um usuário ----
 export async function followUser(currentUid, targetUid) {
@@ -127,7 +128,6 @@ export async function renderDiscoverSection(currentUid) {
 
 // ---- Handler global: toggle follow/unfollow ----
 window.toggleFollowUser = async function(targetUid) {
-  const { auth } = await import('../firebase.js');
   const user = auth.currentUser;
   if (!user) return;
 
@@ -147,7 +147,6 @@ window.toggleFollowUser = async function(targetUid) {
 // ---- Cria notificação de follow (usado internamente) ----
 async function _createFollowNotification(fromUid, toUid) {
   try {
-    const { addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
     await addDoc(collection(db, 'notifications', toUid, 'items'), {
       type: 'follow',
       fromUser: fromUid,

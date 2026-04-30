@@ -3,10 +3,12 @@
 
 import { db } from '../firebase.js';
 
-const {
+// CORREÇÃO: substituído "await import(...)" (top-level await) por import estático.
+// O top-level await travava toda a cadeia de módulos, impedindo o app de sair do splash.
+import {
   collection, query, orderBy, limit, onSnapshot,
-  updateDoc, doc, where,
-} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+  updateDoc, doc, where, getDocs,
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 let _nrtUnsubscribe = null;
 
@@ -97,7 +99,7 @@ export async function renderNotificationsPanel(uid) {
   const container = document.getElementById('notif-panel-list');
   if (!container) return;
 
-  const { getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+  // getDocs já está disponível via import estático no topo do arquivo
   const q = query(
     collection(db, 'notifications', uid, 'items'),
     orderBy('createdAt', 'desc'),

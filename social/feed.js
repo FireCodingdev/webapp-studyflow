@@ -2,13 +2,14 @@
 // Timeline / Feed Central — NOVO MÓDULO
 // Renderiza posts do Firestore na página #page-feed
 
-import { db } from '../firebase.js';
+import { db, auth } from '../firebase.js';
 import { renderPostCard } from '../components/post-card.js';
 
-const {
+// CORREÇÃO: import estático no lugar de top-level await
+import {
   collection, query, orderBy, limit, onSnapshot,
   addDoc, serverTimestamp, where, getDocs,
-} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 let _feedUnsubscribe = null;
 let _feedState = null;
@@ -29,7 +30,7 @@ export async function renderFeed() {
   // Cancela listener anterior
   if (_feedUnsubscribe) { _feedUnsubscribe(); _feedUnsubscribe = null; }
 
-  const { auth } = await import('../firebase.js');
+
   const user = auth.currentUser;
   if (!user) { container.innerHTML = `<p class="feed-empty">Faça login para ver o feed.</p>`; return; }
 
@@ -54,7 +55,7 @@ export async function renderFeed() {
 
 // ---- Publicar novo post ----
 export async function publishPost({ type, content, subjectId, visibility }) {
-  const { auth } = await import('../firebase.js');
+
   const user = auth.currentUser;
   if (!user || !content?.trim()) return null;
 

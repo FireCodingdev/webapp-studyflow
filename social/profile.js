@@ -2,11 +2,12 @@
 // Perfil acadêmico público — NOVO MÓDULO
 // Não altera nenhuma função existente. Apenas adiciona novas.
 
-import { db } from '../firebase.js';
+import { db, auth } from '../firebase.js';
 
-const {
+// CORREÇÃO: import estático no lugar de top-level await
+import {
   doc, getDoc, setDoc, collection, query, where, getDocs, limit
-} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ---- Salvar perfil acadêmico público no Firestore ----
 export async function saveAcademicProfile(uid, profileData) {
@@ -94,7 +95,6 @@ export async function renderAcademicProfileSection(uid) {
 
 // ---- Handler chamado pelo onclick do botão salvar ----
 window.saveAcademicProfileUI = async function() {
-  const { auth } = await import('../firebase.js');
   const user = auth.currentUser;
   if (!user) return;
 

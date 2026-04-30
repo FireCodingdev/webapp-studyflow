@@ -1,16 +1,17 @@
 // ===== SOCIAL: GROUPS.JS =====
 // Salas / fóruns por disciplina — NOVO MÓDULO
 
-import { db } from '../firebase.js';
+import { db, auth } from '../firebase.js';
 
-const {
+// CORREÇÃO: import estático no lugar de top-level await
+import {
   collection, addDoc, getDoc, getDocs, doc, updateDoc,
   arrayUnion, query, orderBy, limit, serverTimestamp,
-} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ---- Criar novo grupo/sala ----
 export async function createGroup({ name, subject, institution }) {
-  const { auth } = await import('../firebase.js');
+  
   const user = auth.currentUser;
   if (!user) return null;
 
@@ -33,7 +34,7 @@ export async function createGroup({ name, subject, institution }) {
 
 // ---- Entrar em um grupo ----
 export async function joinGroup(groupId) {
-  const { auth } = await import('../firebase.js');
+  
   const user = auth.currentUser;
   if (!user) return false;
   try {
@@ -148,7 +149,7 @@ window.submitCreateGroup = async function() {
   const id = await createGroup({ name, subject, institution });
   window.closeModal?.();
   if (id) {
-    const { auth } = await import('../firebase.js');
+    
     renderGroupsSection(auth.currentUser?.uid);
   }
 };

@@ -1,11 +1,12 @@
 // ===== SOCIAL: MODERATION.JS =====
 // Denúncias e filtros de conteúdo — NOVO MÓDULO
 
-import { db } from '../firebase.js';
+import { db, auth } from '../firebase.js';
 
-const {
+// CORREÇÃO: import estático no lugar de top-level await
+import {
   addDoc, collection, serverTimestamp, updateDoc, doc, increment,
-} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ---- Palavras básicas de filtro local (client-side) ----
 const BLOCKED_WORDS = [
@@ -21,7 +22,6 @@ export function checkContentLocal(text) {
 
 // ---- Denunciar um post ----
 export async function reportPost(postId, reason) {
-  const { auth } = await import('../firebase.js');
   const user = auth.currentUser;
   if (!user) return false;
 
