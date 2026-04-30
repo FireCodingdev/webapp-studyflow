@@ -37,23 +37,23 @@
   --c1: #6c63ff; --c2: #ff6584; --c3: #38ef7d; --c4: #ff9f43; --c5: #00d2ff;
 }
 
-/* ── Tema Dark Neutro ───────────────────────────────────────────────────────── */
+/* ── Tema Dark Abyss (preto trevoso, sem cores) ─────────────────────────────── */
 [data-theme="dark"] {
-  --bg: #111113;
-  --bg2: #18181b;
-  --bg3: #1f1f23;
-  --border: #2c2c30;
-  --text: #e8e8ea;
-  --text2: #72727a;
-  --text3: #48484f;
-  --accent: #a0a0b0;
-  --accent-hover: #c8c8cc;
-  --accent-soft: rgba(160, 160, 176, 0.1);
-  --danger: #e05c5c;
-  --success: #4caf7d;
-  --warning: #c9933a;
-  --shadow: 0 8px 24px rgba(0,0,0,0.6);
-  --c1: #6e6e82; --c2: #8a6e7a; --c3: #4a7a62; --c4: #8a7250; --c5: #4a6e82;
+  --bg: #000000;
+  --bg2: #0a0a0a;
+  --bg3: #111111;
+  --border: #1e1e1e;
+  --text: #d4d4d4;
+  --text2: #555555;
+  --text3: #333333;
+  --accent: #888888;
+  --accent-hover: #aaaaaa;
+  --accent-soft: rgba(136, 136, 136, 0.10);
+  --danger: #c0392b;
+  --success: #27ae60;
+  --warning: #b07d2a;
+  --shadow: 0 8px 32px rgba(0,0,0,0.9);
+  --c1: #555555; --c2: #666666; --c3: #444444; --c4: #777777; --c5: #4a4a4a;
 }
 
 /* ── Tema Light Neutro ──────────────────────────────────────────────────────── */
@@ -376,7 +376,7 @@ a { color: inherit; text-decoration: none; }
   align-items: center; /* Centraliza verticalmente */
   justify-content: center; /* Centraliza horizontalmente */
   padding: 20px;
-  background: radial-gradient(circle at top right, #1a1c2c, var(--bg));
+  background: var(--bg);
   position: fixed;
   top: 0;
   left: 0;
@@ -758,9 +758,7 @@ a { color: inherit; text-decoration: none; }
   flex: 1;
   overflow-y: auto;
   padding: 18px 22px 30px;
-  background: radial-gradient(1200px 600px at 80% -10%, rgba(108,99,255,0.16), transparent 60%),
-              radial-gradient(900px 500px at -10% 20%, rgba(255,101,132,0.10), transparent 55%),
-              var(--bg);
+  background: var(--bg);
 }
 
 .topbar {
@@ -773,7 +771,7 @@ a { color: inherit; text-decoration: none; }
   gap: 12px;
   padding: 10px 6px 10px 0;
   margin-bottom: 14px;
-  background: linear-gradient(to bottom, rgba(13,15,20,0.92), rgba(13,15,20,0.65));
+  background: linear-gradient(to bottom, rgba(0,0,0,0.98), rgba(0,0,0,0.85));
   backdrop-filter: blur(10px);
   border-bottom: 1px solid rgba(255,255,255,0.04);
 }
