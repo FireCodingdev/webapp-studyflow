@@ -37,23 +37,23 @@
   --c1: #6c63ff; --c2: #ff6584; --c3: #38ef7d; --c4: #ff9f43; --c5: #00d2ff;
 }
 
-/* ── Tema Dark Abyss (preto trevoso, sem cores) ─────────────────────────────── */
+/* ── Tema Dark Abyss — só preto, roxo e branco ──────────────────────────────── */
 [data-theme="dark"] {
   --bg: #000000;
   --bg2: #0a0a0a;
   --bg3: #111111;
   --border: #1e1e1e;
-  --text: #d4d4d4;
-  --text2: #555555;
+  --text: #ffffff;
+  --text2: #666666;
   --text3: #333333;
-  --accent: #888888;
-  --accent-hover: #aaaaaa;
-  --accent-soft: rgba(136, 136, 136, 0.10);
-  --danger: #c0392b;
-  --success: #27ae60;
-  --warning: #b07d2a;
-  --shadow: 0 8px 32px rgba(0,0,0,0.9);
-  --c1: #555555; --c2: #666666; --c3: #444444; --c4: #777777; --c5: #4a4a4a;
+  --accent: #7c6fff;
+  --accent-hover: #9b91ff;
+  --accent-soft: rgba(124, 111, 255, 0.12);
+  --danger: #7c6fff;
+  --success: #7c6fff;
+  --warning: #9b91ff;
+  --shadow: 0 8px 32px rgba(0,0,0,0.95);
+  --c1: #7c6fff; --c2: #7c6fff; --c3: #7c6fff; --c4: #7c6fff; --c5: #7c6fff;
 }
 
 /* ── Tema Light Neutro ──────────────────────────────────────────────────────── */
@@ -1960,4 +1960,33 @@ a { color: inherit; text-decoration: none; }
 /* DARK THEME — ajustes pontuais */
 [data-theme="dark"] .sidebar-footer {
   border-top-color: var(--border);
+}
+/* ── Dark theme: forçar preto/roxo/branco em tudo ───────────────────────────── */
+[data-theme="dark"] .stat-i-classes,
+[data-theme="dark"] .stat-i-tasks,
+[data-theme="dark"] .stat-i-exams {
+  background: rgba(124, 111, 255, 0.08);
+  border: 1px solid rgba(124, 111, 255, 0.2);
+  color: rgba(124, 111, 255, 0.9);
+}
+
+[data-theme="dark"] .db-focus-badge.live,
+[data-theme="dark"] .db-exam-urgent,
+[data-theme="dark"] .db-exam-soon {
+  background: rgba(124, 111, 255, 0.1);
+  color: #9b91ff;
+}
+
+[data-theme="dark"] .db-stat-next-card {
+  border-left-color: #7c6fff;
+}
+
+[data-theme="dark"] .db-exam-card,
+[data-theme="dark"] .db-task-item {
+  border-left-color: #7c6fff;
+}
+
+[data-theme="dark"] [style*="color: var(--c"],
+[data-theme="dark"] [style*="color:var(--c"] {
+  color: #7c6fff !important;
 }
