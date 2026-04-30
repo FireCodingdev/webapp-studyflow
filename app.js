@@ -824,23 +824,22 @@ function renderDashboard() {
           d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' })
            .replace(/\./g, '');
 
-        const urgCls = diff === 0 ? 'db-exam-urgent' : diff <= 3 ? 'db-exam-soon' : diff <= 7 ? 'db-exam-week' : 'db-exam-ok';
+        const subjectColor = e.subjectColor || 'var(--accent)';
 
         const notesLine = e.notes
-          ? `<div class="exam-card-notes">${escapeHtml(e.notes)}</div>`
+          ? `<div class="exam-card-notes" style="color:${subjectColor}">${escapeHtml(e.notes)}</div>`
           : '';
 
         return `
           <div class="cls-card">
-            <div class="cls-card-bar" style="background:var(--accent)"></div>
+            <div class="cls-card-bar" style="background:${subjectColor}"></div>
             <div class="cls-card-body">
               <div class="cls-card-row">
                 <span class="cls-card-name">${escapeHtml(e.title)}</span>
-                <span class="db-exam-badge ${urgCls}">${dateLabel}</span>
               </div>
               <div class="cls-card-meta">
-                ${e.subjectName ? `<span class="cls-meta" style="color:var(--accent);font-weight:600">${escapeHtml(e.subjectName)}</span>` : ''}
-                ${diff > 0 ? `<span class="cls-meta cls-meta--dim">${diff}d restantes</span>` : ''}
+                ${e.subjectName ? `<span class="cls-meta" style="color:${subjectColor};font-weight:600">${escapeHtml(e.subjectName)}</span>` : ''}
+                <span class="cls-meta cls-meta--dim" style="margin-left:auto">${dateLabel}</span>
               </div>
               ${notesLine}
             </div>
