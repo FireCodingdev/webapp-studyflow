@@ -235,7 +235,48 @@ function postTypeIcon(type) {
 
 // ── IA: Análise de imagem de grade curricular via Claude API ──────────────────
 
-async function analyzeGradeImage(imageBase64, mimeType = 'image/jpeg') {
+/**
+ * Analisa o print do Portal do Aluno (FACAPE) e retorna as disciplinas
+ * do período indicado pelo usuário.
+ *
+ * Estrutura da grade no portal:
+ *   Colunas: Período | Código | Disciplina (Descrição) | C.H. | C.R. | Pré-Requisito
+ *   Exemplo de linha: 2 | 02.03.19.1.08 | CALCULO I | 60 | 4 | ...
+ *
+ * @param {string} imageBase64
+ * @param {string} mimeType
+ * @param {number|null} targetSemester  — período atual selecionado pelo usuário
+ */
+async function analyzeGradeImage(imageBase64, mimeType = 'image/jpeg', targetSemester = null) {
+  const semInstrucao = targetSemester
+    ? `O usuário informou que está cursando o PERÍODO ${targetSemester}. Retorne APENAS as disciplinas cuja coluna "Período" seja exatamente "${targetSemester}".`
+    : `Retorne as disciplinas do período de maior número com aulas regulares (excluindo estágios e TCCs).`;
+
+  const prompt = `Esta é uma imagem do Portal do Aluno da FACAPE (Faculdade de Petrolina – PE).
+
+A grade curricular tem colunas: Período | Código | Disciplina/Descrição | C.H. | C.R. | Pré-Requisito.
+
+${semInstrucao}
+
+Regras de extração:
+- Leia TODAS as linhas da tabela.
+- Filtre SOMENTE as linhas cujo valor na coluna "Período" corresponda ao período solicitado.
+- O campo "nome" deve ser o nome da disciplina capitalizado corretamente em português (ex: "Cálculo I", "Banco de Dados I").
+- O campo "codigo" deve ser o código exato (ex: "02.03.19.1.08").
+- NÃO inclua estágios, TCCs, projetos ou atividades complementares, a menos que sejam disciplinas regulares daquele período.
+- Identifique o nome do curso e o período detectado no cabeçalho da página, se visível.
+
+Retorne SOMENTE um JSON válido, sem texto fora do JSON:
+{
+  "materias": [
+    {"nome": "Nome da Disciplina", "codigo": "XX.XX.XX.X.XX"}
+  ],
+  "semestre": <número do período ou null>,
+  "curso": "<nome do curso ou null>"
+}
+
+Se não conseguir identificar matérias, retorne: {"materias": [], "semestre": null, "curso": null}`;
+
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -250,15 +291,7 @@ async function analyzeGradeImage(imageBase64, mimeType = 'image/jpeg') {
               type: 'image',
               source: { type: 'base64', media_type: mimeType, data: imageBase64 },
             },
-            {
-              type: 'text',
-              text: `Esta é uma imagem de grade curricular, histórico ou comprovante de matrícula de um estudante da FACAPE (Faculdade de Petrolina).
-Extraia APENAS as matérias/disciplinas que o aluno está cursando AGORA (matrícula ativa ou semestre atual).
-Retorne SOMENTE um JSON válido no formato:
-{"materias": ["Nome Matéria 1", "Nome Matéria 2", ...], "semestre": 1, "curso": "Nome do Curso"}
-Se não conseguir identificar claramente, retorne: {"materias": [], "semestre": null, "curso": null}
-Não inclua texto fora do JSON.`,
-            },
+            { type: 'text', text: prompt },
           ],
         }],
       }),
@@ -268,7 +301,18 @@ Não inclua texto fora do JSON.`,
     const data = await response.json();
     const text = data.content?.find(b => b.type === 'text')?.text || '{}';
     const clean = text.replace(/```json|```/g, '').trim();
-    return JSON.parse(clean);
+    const jsonMatch = clean.match(/{[\s\S]*}/);
+    if (!jsonMatch) return { materias: [], semestre: null, curso: null };
+    const parsed = JSON.parse(jsonMatch[0]);
+    // Normaliza: aceita string[] ou {nome,codigo}[]
+    if (Array.isArray(parsed.materias)) {
+      parsed.materias = parsed.materias.map(m =>
+        typeof m === 'string'
+          ? { nome: m, codigo: '' }
+          : { nome: m.nome || m.name || '', codigo: m.codigo || m.code || '' }
+      ).filter(m => m.nome.trim());
+    }
+    return parsed;
   } catch (err) {
     console.error('[turmas/ia] Erro ao analisar imagem:', err);
     return { materias: [], semestre: null, curso: null };
@@ -596,7 +640,7 @@ window.openTurmasOnboarding = async function() {
           <label for="ta-grade-img" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px">
             <span style="font-size:28px">🤖</span>
             <span style="font-weight:600;color:var(--accent)">Enviar print do portal aluno</span>
-            <span style="font-size:12px;color:var(--text-muted);text-align:center">A IA vai identificar automaticamente suas matérias do portal.facape.br</span>
+            <span style="font-size:12px;color:var(--text-muted);text-align:center">Selecione seu período acima e envie o print da grade curricular do portal.facape.br — a IA filtrará as matérias do período informado</span>
             <input type="file" id="ta-grade-img" accept="image/*" style="display:none" onchange="window._taAnalyzeImage()">
           </label>
         </div>
@@ -709,9 +753,18 @@ window.openTurmasOnboarding = async function() {
     const file = fileInput?.files?.[0];
     if (!file) return;
 
+    // Lê o período selecionado antes da análise (campo obrigatório agora)
+    const targetSemester = parseInt(document.getElementById('ta-semester')?.value) || null;
+
     const statusEl = document.getElementById('ta-ia-status');
     const uploadArea = document.getElementById('ta-ia-upload-area');
-    if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = '🤖 Analisando imagem com IA...'; }
+    if (statusEl) {
+      statusEl.style.display = 'block';
+      statusEl.style.color = 'var(--accent)';
+      statusEl.textContent = targetSemester
+        ? `🤖 Analisando imagem — buscando matérias do período ${targetSemester}...`
+        : '🤖 Analisando imagem com IA...';
+    }
     if (uploadArea) uploadArea.style.opacity = '0.5';
 
     // Converte para base64
@@ -723,16 +776,20 @@ window.openTurmasOnboarding = async function() {
     });
 
     const mimeType = file.type || 'image/jpeg';
-    const result = await analyzeGradeImage(base64, mimeType);
+    // Passa o período selecionado para que a IA filtre corretamente
+    const result = await analyzeGradeImage(base64, mimeType, targetSemester);
 
     if (uploadArea) uploadArea.style.opacity = '1';
 
     if (!result.materias?.length) {
-      if (statusEl) statusEl.textContent = '❌ Não foi possível identificar matérias. Tente outra imagem ou adicione manualmente.';
+      if (statusEl) {
+        statusEl.style.color = '#e05252';
+        statusEl.textContent = '❌ Não foi possível identificar matérias. Verifique se o período está correto e tente outra imagem.';
+      }
       return;
     }
 
-    // Preenche automaticamente curso e semestre se detectados
+    // Preenche automaticamente curso se detectado
     if (result.curso) {
       const matched = FACAPE_COURSES.find(c =>
         c.name.toLowerCase().includes(result.curso.toLowerCase()) ||
@@ -743,25 +800,68 @@ window.openTurmasOnboarding = async function() {
         if (sel) sel.value = matched.id;
       }
     }
-    if (result.semestre) {
+    // Confirma o semestre detectado (mas respeita o que o usuário já selecionou)
+    if (result.semestre && !targetSemester) {
       const semInput = document.getElementById('ta-semester');
       if (semInput) semInput.value = result.semestre;
     }
 
-    // Adiciona matérias detectadas
+    // ── Exibe resultados da IA na área de sugestões (substituindo sugestões fixas) ──
+    renderIASuggestions(result.materias, result.semestre || targetSemester);
+
+    if (statusEl) {
+      statusEl.style.color = '#2ed573';
+      statusEl.textContent = `✅ ${result.materias.length} matéria(s) do período ${result.semestre || targetSemester || ''} identificada(s) pela IA! Clique para adicionar.`;
+    }
+    showToast(`🤖 IA encontrou ${result.materias.length} matéria(s)!`);
+  };
+
+  // Renderiza os chips de sugestão da IA no lugar das sugestões estáticas
+  function renderIASuggestions(materias, semestre) {
+    const el = document.getElementById('ta-semester-subjects');
+    if (!el) return;
+    if (!materias.length) { el.innerHTML = ''; return; }
+
+    el.innerHTML = `
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;display:flex;align-items:center;gap:5px">
+        <span style="background:rgba(108,99,255,0.15);color:var(--accent);padding:2px 7px;border-radius:20px;font-size:11px;font-weight:700">🤖 IA</span>
+        Matérias do ${semestre ? semestre + 'º período' : 'período atual'} identificadas no portal — clique para adicionar:
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${materias.map(m => `
+          <button class="turmas-quick-sub-btn" onclick="window._taQuickAddWithCode('${esc(m.nome)}','${esc(m.codigo)}')"
+            style="padding:4px 10px;border-radius:20px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer;font-size:12px;transition:all .15s"
+            title="${esc(m.codigo || '')}">${esc(m.nome)}</button>
+        `).join('')}
+      </div>
+      <button onclick="window._taAddAllIA()" style="margin-top:8px;font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer">
+        ➕ Adicionar todas da IA
+      </button>
+    `;
+
+    // Guarda resultado da IA para usar no "Adicionar todas"
+    window._iaLastResult = materias;
+  }
+
+  window._taQuickAddWithCode = function(nome, codigo) {
+    if (subjects.find(s => s.name.toLowerCase() === nome.toLowerCase())) {
+      showToast('Matéria já adicionada'); return;
+    }
+    subjects.push({ name: nome, code: codigo });
+    renderSubjectChips();
+  };
+
+  window._taAddAllIA = function() {
+    const materias = window._iaLastResult || [];
     let added = 0;
-    result.materias.forEach(name => {
-      if (!subjects.find(s => s.name.toLowerCase() === name.toLowerCase())) {
-        subjects.push({ name: name.trim(), code: '' });
+    materias.forEach(m => {
+      if (!subjects.find(s => s.name.toLowerCase() === m.nome.toLowerCase())) {
+        subjects.push({ name: m.nome, code: m.codigo || '' });
         added++;
       }
     });
-
     renderSubjectChips();
-    window._taOnCourseChange();
-
-    if (statusEl) statusEl.textContent = `✅ ${added} matéria(s) identificada(s) pela IA! Revise e ajuste se necessário.`;
-    showToast(`🤖 IA encontrou ${added} matéria(s)!`);
+    if (added) showToast(`✅ ${added} matéria(s) adicionada(s)`);
   };
 
   function renderSubjectChips() {
