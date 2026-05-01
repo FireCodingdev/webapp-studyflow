@@ -395,6 +395,7 @@
             <button class="social-tab-btn active" data-tab="feed" onclick="window.switchSocialTab('feed')">📰 Feed</button>
             <button class="social-tab-btn" data-tab="discover" onclick="window.switchSocialTab('discover')">🔍 Descobrir</button>
             <button class="social-tab-btn" data-tab="groups" onclick="window.switchSocialTab('groups')">🏫 Salas</button>
+            <button class="social-tab-btn" data-tab="turmas" onclick="window.switchSocialTab('turmas')">🎓 Turmas</button>
             <button class="social-tab-btn" data-tab="notifications" onclick="window.switchSocialTab('notifications')">🔔 Notificações</button>
           </div>
  
@@ -423,6 +424,13 @@
               <button class="btn-primary" onclick="window.openCreateGroupModal()">+ Nova Sala</button>
             </div>
             <div id="groups-list" class="groups-list"></div>
+          </div>
+ 
+          <!-- Turmas tab -->
+          <div class="social-tab-pane" data-tab="turmas">
+            <div id="turmas-tab-content">
+              <div class="turmas-loading">⏳ Carregando turmas...</div>
+            </div>
           </div>
  
           <!-- Notifications tab -->

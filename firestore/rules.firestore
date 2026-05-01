@@ -80,5 +80,39 @@ service cloud.firestore {
       allow read: if false; // apenas via Admin SDK / Cloud Functions
       allow update, delete: if false;
     }
+
+    // ===== TURMAS POR MATÉRIA =====
+
+    // Salas de matéria (criadas automaticamente ao vincular perfil)
+    match /subject_rooms/{roomId} {
+      allow read: if isAuth();
+      // Qualquer usuário logado pode criar/atualizar salas (para ensureSubjectRoom)
+      allow create: if isAuth();
+      allow update: if isAuth(); // memberCount, etc.
+      allow delete: if false;   // salas não são deletadas
+
+      // Membros da sala
+      match /members/{uid} {
+        allow read: if isAuth();
+        allow write: if isOwner(uid); // cada usuário gerencia sua própria inscrição
+      }
+
+      // Posts do mural
+      match /posts/{postId} {
+        allow read: if isAuth();
+        allow create: if isAuth()
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.content is string
+          && request.resource.data.content.size() > 0
+          && request.resource.data.content.size() <= 3000;
+        // Likes podem ser atualizados por qualquer membro logado
+        allow update: if isAuth() && (
+          !('authorId' in request.resource.data.diff(resource.data).affectedKeys()) &&
+          !('content'  in request.resource.data.diff(resource.data).affectedKeys())
+        );
+        // Só o autor pode deletar o post
+        allow delete: if isAuth() && resource.data.authorId == request.auth.uid;
+      }
+    }
   }
 }

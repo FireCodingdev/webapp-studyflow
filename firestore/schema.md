@@ -126,3 +126,66 @@ notifications/{uid}/items: read ASC, createdAt DESC
 groups: subject ASC, createdAt DESC
 reports: status ASC, createdAt DESC
 ```
+
+---
+
+## Coleção Nova — Salas de Matéria (Turmas)
+
+### `subject_rooms/{roomId}`
+
+> `roomId` é gerado automaticamente como slug de `{institution}::{subjectCode|subjectName}` (ex: `ufpe__calculo_ii`)
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `institution` | string | Instituição de ensino |
+| `subjectName` | string | Nome da disciplina |
+| `subjectCode` | string | Código da disciplina (ex: IF778) |
+| `memberCount` | number | Quantidade de alunos inscritos |
+| `createdAt` | timestamp | Data de criação |
+
+### `subject_rooms/{roomId}/members/{uid}`
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `uid` | string | UID do membro |
+| `joinedAt` | timestamp | Data de inscrição |
+
+### `subject_rooms/{roomId}/posts/{postId}`
+
+| Campo | Tipo | Valores |
+|-------|------|---------|
+| `authorId` | string | UID do autor |
+| `authorName` | string | Nome do autor |
+| `type` | string | `"discussao"` \| `"aviso"` \| `"link"` \| `"documento"` \| `"imagem"` |
+| `content` | string | Conteúdo da publicação (até 3000 chars) |
+| `fileUrl` | string \| null | URL de arquivo/imagem (opcional) |
+| `fileName` | string \| null | Nome do arquivo (opcional) |
+| `likes` | string[] | UIDs que curtiram |
+| `createdAt` | timestamp | Firestore server timestamp |
+
+### Campo expandido em `users/{uid}/profile/academic`
+
+Agora inclui o campo `subjects`:
+
+```json
+{
+  "institution": "UFPE",
+  "course": "Engenharia de Software",
+  "semester": 3,
+  "period": "noturno",
+  "subjects": [
+    { "name": "Cálculo II", "code": "MA026" },
+    { "name": "Programação Orientada a Objetos", "code": "IF678" }
+  ],
+  "skills": ["Python", "UX"],
+  "bio": "...",
+  "updatedAt": "2025-..."
+}
+```
+
+## Índices Adicionais Recomendados
+
+```
+subject_rooms/{roomId}/posts: createdAt DESC
+subject_rooms/{roomId}/members: joinedAt DESC
+```

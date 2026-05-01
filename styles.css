@@ -2625,3 +2625,292 @@ a { color: inherit; text-decoration: none; }
   gap: 14px;
   padding: 4px 0;
 }
+
+/* ═══════════════════════════════════════════════
+   TURMAS POR MATÉRIA
+   ═══════════════════════════════════════════════ */
+
+/* ─── Aba Turmas: onboarding ─────────────────── */
+.turmas-onboarding {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 24px;
+  gap: 12px;
+}
+.turmas-onboarding-icon { font-size: 52px; }
+.turmas-onboarding-title { font-size: 20px; font-weight: 700; color: var(--text); margin: 0; }
+.turmas-onboarding-desc { font-size: 14px; color: var(--text2); max-width: 280px; margin: 0; line-height: 1.5; }
+.turmas-onboarding-btn { margin-top: 8px; padding: 12px 28px; font-size: 15px; }
+
+/* ─── Barra de perfil acadêmico ──────────────── */
+.turmas-profile-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--card);
+  border-radius: 14px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+.turmas-profile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.turmas-inst {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.turmas-course {
+  font-size: 12px;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.turmas-edit-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--text2);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.turmas-edit-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* ─── Lista de turmas ────────────────────────── */
+.turmas-rooms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.turmas-loading, .turmas-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text2);
+  font-size: 14px;
+}
+.turmas-empty button {
+  margin-top: 8px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ─── Card de turma ──────────────────────────── */
+.turma-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--card);
+  border-radius: 16px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  gap: 12px;
+}
+.turma-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(108,99,255,0.15); }
+.turma-card:active { transform: scale(0.98); }
+.turma-card-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.turma-card-icon { font-size: 28px; flex-shrink: 0; }
+.turma-card-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.turma-card-name { font-size: 15px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.turma-card-code { font-size: 11px; color: var(--accent); font-weight: 600; }
+.turma-card-members { font-size: 12px; color: var(--text2); }
+.turma-card-arrow { font-size: 22px; color: var(--text2); flex-shrink: 0; }
+
+/* ─── Formulário de onboarding (modal) ──────── */
+.turmas-form { display: flex; flex-direction: column; gap: 14px; }
+.turmas-subjects-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+  min-height: 32px;
+  align-items: flex-start;
+}
+.turmas-no-subjects { font-size: 12px; color: var(--text2); align-self: center; }
+.turmas-subject-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 20px;
+  padding: 4px 10px 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.turmas-subject-chip button {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.8);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  margin: 0;
+}
+.turmas-subject-chip button:hover { color: #fff; }
+.turmas-add-subject {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.turmas-add-subject .form-input { min-width: 80px; }
+
+/* ─── Mural de matéria (dentro do modal) ────── */
+.mural-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 65vh;
+  overflow: hidden;
+}
+.mural-new-post {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.mural-type-sel { font-size: 13px; padding: 6px 10px; }
+.mural-textarea { min-height: 64px; resize: vertical; }
+.mural-posts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.mural-empty {
+  text-align: center;
+  padding: 24px;
+  color: var(--text2);
+  font-size: 14px;
+}
+
+/* ─── Post do mural ──────────────────────────── */
+.mural-post {
+  background: var(--card);
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mural-post-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.mural-post-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.mural-post-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.mural-post-author { font-size: 13px; font-weight: 700; color: var(--text); }
+.mural-post-badges { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.mural-post-type-badge {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 2px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mural-post-time { font-size: 11px; color: var(--text2); }
+.mural-del-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.5;
+  flex-shrink: 0;
+  padding: 2px;
+}
+.mural-del-btn:hover { opacity: 1; }
+.mural-post-content {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.55;
+  word-break: break-word;
+}
+.mural-inline-link {
+  color: var(--accent);
+  text-decoration: underline;
+  word-break: break-all;
+}
+.mural-post-img {
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+  border-radius: 10px;
+}
+.mural-post-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-size: 13px;
+  text-decoration: none;
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mural-post-actions { display: flex; gap: 8px; }
+.mural-like-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text2);
+  transition: all 0.15s;
+}
+.mural-like-btn.liked {
+  border-color: #ff6b81;
+  color: #ff6b81;
+  background: #ff6b8111;
+}
+.mural-like-btn:hover { opacity: 0.8; }
