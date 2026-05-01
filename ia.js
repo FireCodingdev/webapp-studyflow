@@ -369,7 +369,7 @@ export function initIA(STATE, hooks) {
         <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
         <circle cx="12" cy="13" r="4"/>
       </svg>
-      <span>Importar foto</span>
+      <span>Importar Horário de Aulas</span>
     `;
     btn.addEventListener('click', () => abrirModalImportarCronograma(STATE, hooks));
     scheduleHeader.insertAdjacentElement('afterend', btn);
@@ -390,28 +390,37 @@ export function initIA(STATE, hooks) {
   function injetarBotaoProvas() {
     if (document.getElementById('ia-exams-btn')) return;
 
-    const tasksHeader = document.querySelector('#page-tasks .filter-tabs');
-    if (!tasksHeader) return;
+    // Botão agora fica na aba Cronograma, abaixo do botão de sillabus
+    const scheduleHeader = document.getElementById('schedule-calendar');
+    if (!scheduleHeader) return;
 
     const btn = document.createElement('button');
     btn.id        = 'ia-exams-btn';
-    btn.className = 'ia-fab-btn';
+    btn.className = 'ia-fab-btn ia-fab-btn--provas';
     btn.title     = 'Importar calendário de provas por foto';
     btn.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
         <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
         <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>
       </svg>
-      <span>Importar provas</span>
+      <span>Importar Calendário de Provas</span>
     `;
     btn.addEventListener('click', () => abrirModalImportarProvas(STATE, hooks));
-    tasksHeader.insertAdjacentElement('afterend', btn);
+    // Insere abaixo do botão de sillabus (ou do de foto se sillabus não existir)
+    const sillabusBtn = document.getElementById('ia-sillabus-btn');
+    const fotoBtn = document.getElementById('ia-import-btn');
+    const anchor = sillabusBtn || fotoBtn;
+    if (anchor) {
+      anchor.insertAdjacentElement('afterend', btn);
+    } else {
+      scheduleHeader.insertAdjacentElement('afterend', btn);
+    }
   }
 
-  // Observa mudanças de página para injetar o botão de provas
+  // Observa mudanças de página de cronograma para injetar o botão de provas
   const observerProvas = new MutationObserver(() => {
-    const tasksPage = document.getElementById('page-tasks');
-    if (tasksPage?.classList.contains('active')) injetarBotaoProvas();
+    const schedulePage = document.getElementById('page-schedule');
+    if (schedulePage?.classList.contains('active')) injetarBotaoProvas();
   });
   observerProvas.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
   injetarBotaoProvas();
@@ -433,7 +442,7 @@ export function initIA(STATE, hooks) {
         <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
         <polyline points="10 9 9 9 8 9"/>
       </svg>
-      <span>Importar plano de aulas</span>
+      <span>Importar Cronograma de Aulas</span>
     `;
     btn.addEventListener('click', () => abrirModalImportarSillabus(STATE, hooks));
     // Insere abaixo do botão de foto de cronograma
@@ -998,6 +1007,28 @@ async function aplicarSillabusNoApp(dadosIA, STATE, hooks, opcoes) {
     #ia-sillabus-btn:hover {
       background: rgba(46, 213, 115, 0.18);
       border-color: rgba(46, 213, 115, 0.8);
+    }
+
+    /* Botão importar calendário de provas (na aba Cronograma) */
+    #ia-exams-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0 4px;
+      padding: 10px 18px;
+      background: rgba(255, 107, 107, 0.1);
+      border: 1px dashed rgba(255, 107, 107, 0.5);
+      border-radius: 12px;
+      color: rgba(255, 107, 107, 0.95);
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    #ia-exams-btn:hover {
+      background: rgba(255, 107, 107, 0.18);
+      border-color: rgba(255, 107, 107, 0.8);
     }
 
     /* Sillabus result UI */
