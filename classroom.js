@@ -17,6 +17,7 @@ const CLASSROOM_SCOPES = [
   'https://www.googleapis.com/auth/classroom.courses.readonly',
   'https://www.googleapis.com/auth/classroom.coursework.me.readonly',
   'https://www.googleapis.com/auth/classroom.announcements.readonly',
+  'https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly',
 ].join(' ');
 
 // URL da Firebase Function de proxy
@@ -458,7 +459,7 @@ export async function renderPostsClassroom(token) {
 
   section.innerHTML = `
     <div class="cl-posts-header">
-      <span class="cl-posts-title">📢 Posts recentes do Classroom</span>
+      <span class="cl-posts-title">📚 Publicações do Classroom</span>
       <span class="cl-posts-loading">Carregando...</span>
     </div>`;
 
@@ -480,16 +481,16 @@ export async function renderPostsClassroom(token) {
     if (recentes.length === 0) {
       section.innerHTML = `
         <div class="cl-posts-header">
-          <span class="cl-posts-title">📢 Posts recentes do Classroom</span>
+          <span class="cl-posts-title">📚 Publicações do Classroom</span>
         </div>
-        <p class="cl-posts-empty">Nenhum post encontrado nas turmas ativas.</p>`;
+        <p class="cl-posts-empty">Nenhuma publicação encontrada nas turmas ativas.</p>`;
       return;
     }
 
     section.innerHTML = `
       <div class="cl-posts-header">
-        <span class="cl-posts-title">📢 Posts recentes do Classroom</span>
-        <span class="cl-posts-count">${recentes.length} post${recentes.length > 1 ? 's' : ''}</span>
+        <span class="cl-posts-title">📚 Publicações do Classroom</span>
+        <span class="cl-posts-count">${recentes.length} publicaç${recentes.length > 1 ? 'ões' : 'ão'}</span>
       </div>
       ${recentes.map(renderPostCard).join('')}`;
 
@@ -497,22 +498,49 @@ export async function renderPostsClassroom(token) {
     console.error('[Classroom] Erro ao buscar posts:', err);
     section.innerHTML = `
       <div class="cl-posts-header">
-        <span class="cl-posts-title">📢 Posts recentes do Classroom</span>
+        <span class="cl-posts-title">📚 Publicações do Classroom</span>
       </div>
-      <p class="cl-posts-empty">Erro ao carregar posts. Tente sincronizar novamente.</p>`;
+      <p class="cl-posts-empty">Erro ao carregar publicações. Tente sincronizar novamente.</p>`;
   }
 }
 
 async function buscarPostsDaTurma(curso, token) {
-  try {
-    const res = await fetch(
-      `https://classroom.googleapis.com/v1/courses/${curso.id}/announcements?pageSize=10&orderBy=updateTime+desc`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!res.ok) return [];
-    const { announcements = [] } = await res.json();
-    return announcements.map(a => ({ ...a, _nomeTurma: curso.name, _corTurma: encontrarCorTurma(curso.name) }));
-  } catch { return []; }
+  const cor = encontrarCorTurma(curso.name);
+
+  // 1. Avisos (announcements)
+  const fetchAnnouncements = fetch(
+    `https://classroom.googleapis.com/v1/courses/${curso.id}/announcements?pageSize=10&orderBy=updateTime+desc`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  ).then(r => r.ok ? r.json() : { announcements: [] })
+   .then(({ announcements = [] }) =>
+     announcements.map(a => ({
+       ...a,
+       _nomeTurma: curso.name,
+       _corTurma:  cor,
+       _tipo:      'aviso',         // discriminator
+     }))
+   ).catch(() => []);
+
+  // 2. Materiais publicados pelo professor (courseWorkMaterials)
+  const fetchMaterials = fetch(
+    `https://classroom.googleapis.com/v1/courses/${curso.id}/courseWorkMaterials?pageSize=10&orderBy=updateTime+desc`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  ).then(r => r.ok ? r.json() : { courseWorkMaterial: [] })
+   .then(data => {
+     // A API retorna a chave "courseWorkMaterial" (singular) nesta rota
+     const items = data.courseWorkMaterial || [];
+     return items.map(m => ({
+       ...m,
+       _nomeTurma: curso.name,
+       _corTurma:  cor,
+       _tipo:      'material',      // discriminator
+       // Normaliza campo de texto para reutilizar renderPostCard
+       text:       m.description || m.title || '',
+     }));
+   }).catch(() => []);
+
+  const [avisos, materiais] = await Promise.all([fetchAnnouncements, fetchMaterials]);
+  return [...avisos, ...materiais];
 }
 
 function encontrarCorTurma(nomeTurma) {
@@ -523,9 +551,18 @@ function encontrarCorTurma(nomeTurma) {
 }
 
 function renderPostCard(post) {
-  const data = post.updateTime
-    ? new Date(post.updateTime).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+  // courseWorkMaterials usa updateTime; announcements usa updateTime também,
+  // mas tem creationTime como fallback.
+  const dataISO = post.updateTime || post.creationTime || null;
+  const data = dataISO
+    ? new Date(dataISO).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
     : '';
+
+  // Badge visual por tipo de publicação
+  const isMaterial = post._tipo === 'material';
+  const badgeIcon  = isMaterial ? '📎' : '📢';
+  const badgeLabel = isMaterial ? 'Novo material' : 'Aviso';
+  const badgeClass = isMaterial ? 'cl-badge--material' : 'cl-badge--aviso';
 
   const links = (post.materials || [])
     .map(m => {
@@ -537,8 +574,10 @@ function renderPostCard(post) {
     })
     .filter(Boolean);
 
-  const texto    = post.text
-    ? `<p class="cl-post-text">${esc(post.text.slice(0, 200))}${post.text.length > 200 ? '…' : ''}</p>`
+  // Para materiais, o campo text foi normalizado para description/title; para avisos usa text diretamente.
+  const textoRaw = post.text || '';
+  const texto = textoRaw
+    ? `<p class="cl-post-text">${esc(textoRaw.slice(0, 200))}${textoRaw.length > 200 ? '…' : ''}</p>`
     : '';
 
   const linksHtml = links.length
@@ -548,13 +587,21 @@ function renderPostCard(post) {
         </a>`).join('')}</div>`
     : '';
 
+  // Para materiais sem descrição, mostra o título como texto principal
+  const tituloHtml = (isMaterial && !textoRaw && post.title)
+    ? `<p class="cl-post-text cl-post-title-material">${esc(post.title)}</p>`
+    : '';
+
   return `
-    <div class="cl-post-card">
+    <div class="cl-post-card cl-post-card--${post._tipo}">
       <div class="cl-post-card-top">
-        <span class="cl-post-turma" style="color:${post._corTurma}">${esc(post._nomeTurma)}</span>
+        <div class="cl-post-card-top-left">
+          <span class="cl-badge ${badgeClass}">${badgeIcon} ${badgeLabel}</span>
+          <span class="cl-post-turma" style="color:${post._corTurma}">${esc(post._nomeTurma)}</span>
+        </div>
         <span class="cl-post-data">${data}</span>
       </div>
-      ${texto}${linksHtml}
+      ${tituloHtml}${texto}${linksHtml}
     </div>`;
 }
 
@@ -576,10 +623,17 @@ function esc(str) {
     .cl-posts-count, .cl-posts-loading { font-size: 11px; color: var(--text2); }
     .cl-posts-empty { font-size: 13px; color: var(--text2); padding: 8px 0; }
     .cl-post-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
-    .cl-post-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .cl-post-card--material { border-left: 3px solid rgba(66,133,244,0.7); }
+    .cl-post-card--aviso    { border-left: 3px solid rgba(251,188,4,0.7); }
+    .cl-post-card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6px; gap: 8px; }
+    .cl-post-card-top-left { display: flex; flex-direction: column; gap: 3px; }
+    .cl-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .cl-badge--material { background: rgba(66,133,244,0.12); color: rgba(66,133,244,0.95); }
+    .cl-badge--aviso    { background: rgba(251,188,4,0.12);  color: rgba(180,130,0,0.95); }
     .cl-post-turma { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
-    .cl-post-data { font-size: 11px; color: var(--text2); }
+    .cl-post-data { font-size: 11px; color: var(--text2); white-space: nowrap; }
     .cl-post-text { font-size: 13px; color: var(--text); line-height: 1.5; margin: 0 0 8px; white-space: pre-wrap; }
+    .cl-post-title-material { font-weight: 600; }
     .cl-post-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
     .cl-post-link {
       display: flex; align-items: center; gap: 5px; padding: 5px 10px;
