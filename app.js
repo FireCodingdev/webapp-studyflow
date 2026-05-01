@@ -2130,6 +2130,7 @@ window.openAccsSection = function(section) {
     data: 'Dados e Armazenamento',
     appearance: 'Aparência',
     academic: 'Perfil Acadêmico',        // NOVO
+    classroom: 'Google Classroom',
   };
   const user = STATE.currentUser;
   const name = user?.displayName || user?.email?.split('@')[0] || 'Usuário';
@@ -2142,6 +2143,14 @@ window.openAccsSection = function(section) {
     import('./social/profile.js').then(({ renderAcademicProfileSection }) => {
       renderAcademicProfileSection(user?.uid);
     });
+    return;
+  }
+  // ===================================
+
+  // ===== NOVO: Google Classroom =====
+  if (section === 'classroom') {
+    document.getElementById('accs-sub-panel').classList.add('open');
+    _renderClassroomSettingsSection(user?.uid);
     return;
   }
   // ===================================
@@ -2237,6 +2246,155 @@ window.openAccsSection = function(section) {
 window.closeAccsSection = function() {
   document.getElementById('accs-sub-panel')?.classList.remove('open');
 };
+
+// ─── Google Classroom — painel de configurações ───────────────────────────────
+async function _renderClassroomSettingsSection(uid) {
+  const panel = document.getElementById('accs-sub-body');
+  if (!panel) return;
+
+  panel.innerHTML = `<div style="display:flex;align-items:center;gap:8px;color:var(--text2);font-size:13px;padding:12px 0">
+    <span style="animation:spin 1s linear infinite;display:inline-block">⏳</span> Verificando conexão...
+  </div>`;
+
+  // Lê dados do Firestore diretamente
+  let classroomData = null;
+  try {
+    const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { db } = await import('./firebase.js');
+    const snap = await getDoc(doc(db, 'users', uid));
+    classroomData = snap.data()?.classroom || null;
+  } catch(e) {
+    console.warn('[ClassroomSettings] Erro ao ler Firestore:', e);
+  }
+
+  const isConnected  = !!(classroomData?.access_token);
+  const lastSync     = classroomData?.lastSync     || null;
+  const connectedAt  = classroomData?.connectedAt  || null;
+  const expiresAt    = classroomData?.expiresAt    || null;
+  const isExpired    = expiresAt && Date.now() >= expiresAt;
+
+  // Status
+  let statusIcon, statusLabel, statusColor;
+  if (!isConnected) {
+    statusIcon = '⚫'; statusLabel = 'Não conectado'; statusColor = 'var(--text2)';
+  } else if (isExpired) {
+    statusIcon = '🔴'; statusLabel = 'Sessão expirada — reconecte'; statusColor = '#e05252';
+  } else {
+    statusIcon = '🟢'; statusLabel = 'Conectado'; statusColor = '#2ed573';
+  }
+
+  // Atualiza o subtítulo no item de menu principal
+  const subEl = document.getElementById('accs-classroom-status-sub');
+  if (subEl) subEl.textContent = statusLabel;
+
+  const fmtDate = iso => iso
+    ? new Date(iso).toLocaleDateString('pt-BR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
+    : '—';
+
+  panel.innerHTML = `
+    <!-- Status card -->
+    <div class="accs-section-card" style="margin-bottom:16px">
+      <div class="accs-info-row">
+        <span>Status</span>
+        <span style="color:${statusColor};font-weight:700">${statusIcon} ${statusLabel}</span>
+      </div>
+      ${isConnected ? `
+      <div class="accs-info-row">
+        <span>Conectado em</span>
+        <span style="font-size:12px">${fmtDate(connectedAt)}</span>
+      </div>
+      <div class="accs-info-row">
+        <span>Última sincronização</span>
+        <span style="font-size:12px" id="cl-settings-lastsync">${fmtDate(lastSync)}</span>
+      </div>
+      <div class="accs-info-row">
+        <span>Token expira em</span>
+        <span style="font-size:12px">${fmtDate(expiresAt ? new Date(expiresAt).toISOString() : null)}</span>
+      </div>
+      ` : ''}
+    </div>
+
+    <!-- Botões de ação -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      ${isConnected && !isExpired ? `
+        <button class="accs-save-btn" id="cl-settings-sync-btn" onclick="window._accsClassroomSync()">
+          🔄 Sincronizar Agora
+        </button>
+      ` : ''}
+
+      ${isConnected && isExpired ? `
+        <button class="accs-save-btn" onclick="window._accsClassroomReconnect()">
+          🔄 Reconectar Classroom
+        </button>
+      ` : ''}
+
+      ${!isConnected ? `
+        <button class="accs-save-btn" onclick="window._accsClassroomConnect()">
+          📚 Conectar Google Classroom
+        </button>
+      ` : ''}
+
+      ${isConnected ? `
+        <button class="accs-danger-btn" onclick="window._accsClassroomDisconnect()">
+          🔌 Desconectar Classroom
+        </button>
+      ` : ''}
+    </div>
+
+    <p style="font-size:11px;color:var(--text2);margin-top:16px;line-height:1.6">
+      O StudyFlow coleta automaticamente seus <strong>avisos</strong>, <strong>materiais</strong> e <strong>atividades</strong> do Google Classroom ao abrir o app.
+    </p>
+  `;
+
+  // ── Ações ────────────────────────────────────────────────────────────────────
+
+  window._accsClassroomConnect = function() {
+    window._conectarClassroom?.();
+    // Reatualiza o painel após 3s (aguarda OAuth)
+    setTimeout(() => _renderClassroomSettingsSection(uid), 3000);
+  };
+
+  window._accsClassroomReconnect = function() {
+    window._conectarClassroom?.();
+    setTimeout(() => _renderClassroomSettingsSection(uid), 3000);
+  };
+
+  window._accsClassroomSync = async function() {
+    const btn = document.getElementById('cl-settings-sync-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Sincronizando...'; }
+    // Dispara sincronização via função exposta pelo classroom.js
+    await window._renderPostsClassroom?.();
+    // Reatualiza painel para mostrar nova data de sync
+    await _renderClassroomSettingsSection(uid);
+  };
+
+  window._accsClassroomDisconnect = async function() {
+    if (!confirm('Desconectar o Google Classroom? As atividades já importadas serão mantidas.')) return;
+    try {
+      const { updateDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const { db } = await import('./firebase.js');
+      await updateDoc(doc(db, 'users', uid), {
+        'classroom.access_token':  null,
+        'classroom.refresh_token': null,
+        'classroom.expiresAt':     null,
+        'classroom.connectedAt':   null,
+        'classroom.lastSync':      null,
+      });
+      showToast('🔌 Classroom desconectado.');
+      // Atualiza botão na sidebar se existir
+      const label = document.getElementById('classroom-btn-label');
+      if (label) label.textContent = 'Conectar Classroom';
+      const btn = document.getElementById('classroom-connect-btn');
+      btn?.classList.remove('classroom-btn--connected');
+      // Remove seção de posts se visível
+      document.getElementById('classroom-posts-section')?.remove();
+      await _renderClassroomSettingsSection(uid);
+    } catch(e) {
+      showToast('❌ Erro ao desconectar: ' + e.message);
+    }
+  };
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 window.saveAccsAccount = async function() {
   const newName = document.getElementById('accs-inp-name')?.value?.trim();
