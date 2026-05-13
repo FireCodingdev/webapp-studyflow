@@ -453,8 +453,8 @@ exports.facapeProxy = onRequest(
       for (const [k, v] of Object.entries(hiddenFields)) {
         formData.append(k, v);
       }
-      formData.append('matricula', matricula);
-      formData.append('senha', senha);
+      formData.append('enclogn', matricula);
+      formData.append('encpwd', senha);
 
       const postHeaders = {
         ...BASE_HEADERS,
