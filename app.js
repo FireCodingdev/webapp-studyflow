@@ -11,6 +11,7 @@ import {
 
 import { initIA } from './ia.js';
 import { initClassroom, renderPostsClassroom } from './classroom.js';
+import { renderFacapeSettingsSection, getFacapeData, clearFacapeData } from './facape.js';
 import { initFeed, renderFeed } from './social/feed.js';
 import { initRealtimeNotifications, stopRealtimeNotifications } from './social/notifications-rt.js';
 import { checkAchievements, showAchievementToast } from './components/achievement-toast.js';
@@ -2114,6 +2115,13 @@ window.openAccountSettings = function() {
 
   document.getElementById('account-settings-overlay').classList.add('active');
   document.getElementById('account-settings-panel').classList.add('open');
+
+  // Update FACAPE badge
+  const facapeSubEl = document.getElementById('accs-facape-status-sub');
+  if (facapeSubEl) {
+    const facapeData = getFacapeData();
+    facapeSubEl.textContent = facapeData ? `✅ Conectado — ${facapeData.nome || facapeData.matricula || 'FACAPE'}` : 'Horários, Notas e Matérias';
+  }
 };
 
 window.closeAccountSettings = function() {
@@ -2131,11 +2139,20 @@ window.openAccsSection = function(section) {
     appearance: 'Aparência',
     academic: 'Perfil Acadêmico',        // NOVO
     classroom: 'Google Classroom',
+    facape: 'Portal do Aluno FACAPE',
   };
   const user = STATE.currentUser;
   const name = user?.displayName || user?.email?.split('@')[0] || 'Usuário';
 
   document.getElementById('accs-sub-title').textContent = titles[section] || section;
+
+  // ===== NOVO: Portal FACAPE =====
+  if (section === 'facape') {
+    document.getElementById('accs-sub-panel').classList.add('open');
+    renderFacapeSettingsSection(user?.uid, STATE, save, showToast, renderDashboard);
+    return;
+  }
+  // ===================================
 
   // ===== NOVO: Perfil Acadêmico =====
   if (section === 'academic') {
@@ -2189,38 +2206,68 @@ window.openAccsSection = function(section) {
     `;
   } else if (section === 'notifications') {
     const notifOn = localStorage.getItem('accs_notif') !== 'off';
+    const deadlineOn = localStorage.getItem('accs_notif_deadline') !== 'off';
+    const soundOn = localStorage.getItem('accs_notif_sound') === 'on';
+    const classReminderOn = localStorage.getItem('accs_notif_class') !== 'off';
     body = `
       <div class="accs-section-card">
         <div class="accs-toggle-row">
-          <span>Notificações de Tarefas</span>
+          <div>
+            <span>Notificações de Tarefas</span>
+            <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">Lembretes de atividades pendentes</div>
+          </div>
           <div class="accs-toggle ${notifOn ? 'on' : ''}" id="accs-toggle-notif" onclick="toggleAccsNotif()"></div>
         </div>
         <div class="accs-toggle-row">
-          <span>Alertas de Vencimento</span>
-          <div class="accs-toggle on" id="accs-toggle-deadline" onclick="this.classList.toggle('on')"></div>
+          <div>
+            <span>Alertas de Vencimento</span>
+            <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">Avisa 1 dia antes do prazo</div>
+          </div>
+          <div class="accs-toggle ${deadlineOn ? 'on' : ''}" id="accs-toggle-deadline" onclick="toggleAccsDeadline()"></div>
         </div>
         <div class="accs-toggle-row">
-          <span>Som de Notificação</span>
-          <div class="accs-toggle" id="accs-toggle-sound" onclick="this.classList.toggle('on')"></div>
+          <div>
+            <span>Lembrete de Aula</span>
+            <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">15 min antes da aula começar</div>
+          </div>
+          <div class="accs-toggle ${classReminderOn ? 'on' : ''}" id="accs-toggle-class" onclick="toggleAccsClassNotif()"></div>
+        </div>
+        <div class="accs-toggle-row">
+          <div>
+            <span>Som de Notificação</span>
+            <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">Toca um som ao receber alerta</div>
+          </div>
+          <div class="accs-toggle ${soundOn ? 'on' : ''}" id="accs-toggle-sound" onclick="toggleAccsSound()"></div>
         </div>
       </div>
-      <p style="font-size:12px;color:var(--text2)">As notificações funcionam apenas quando o app está aberto ou instalado como PWA.</p>
+      <p style="font-size:12px;color:var(--text2);line-height:1.6">As notificações funcionam quando o app está aberto ou instalado como PWA.</p>
     `;
   } else if (section === 'data') {
     const lsSize = new Blob([JSON.stringify(localStorage)]).size;
+    const facapeData = getFacapeData();
     body = `
       <div class="accs-section-card">
+        <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Armazenamento</div>
         <div class="accs-info-row"><span>Armazenamento Local</span><span>${(lsSize/1024).toFixed(1)} KB</span></div>
         <div class="accs-info-row"><span>Matérias</span><span>${STATE.subjects.length}</span></div>
         <div class="accs-info-row"><span>Tarefas</span><span>${STATE.tasks.length}</span></div>
         <div class="accs-info-row"><span>Flashcards</span><span>${STATE.flashcards.length}</span></div>
+        <div class="accs-info-row"><span>Aulas cadastradas</span><span>${STATE.classes.length}</span></div>
       </div>
+      ${facapeData ? `
+      <div class="accs-section-card" style="margin-top:4px">
+        <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Portal FACAPE</div>
+        <div class="accs-info-row"><span>Aluno</span><span>${facapeData.nome || '—'}</span></div>
+        <div class="accs-info-row"><span>Sincronizado em</span><span style="font-size:11px">${facapeData.syncedAt ? new Date(facapeData.syncedAt).toLocaleDateString('pt-BR') : '—'}</span></div>
+      </div>
+      ` : ''}
       <button class="accs-save-btn" onclick="exportAccsData()">📤 Exportar Meus Dados</button>
       <button class="accs-danger-btn" onclick="clearAccsCache()">🗑️ Limpar Cache Local</button>
     `;
   } else if (section === 'appearance') {
+    const currentFont = localStorage.getItem('accs_font_size') || 'medium';
     body = `
-      <p style="font-size:14px;color:var(--text2);margin-bottom:4px">Tema do Aplicativo</p>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:4px;font-weight:600">Tema do Aplicativo</p>
       <div class="accs-section-card">
         <div style="display:flex;gap:12px;flex-wrap:wrap">
           ${[
@@ -2234,6 +2281,30 @@ window.openAccsSection = function(section) {
               <span style="font-size:12px;color:var(--text)">${t.label}</span>
             </button>
           `).join('')}
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--text2);margin-top:8px;font-weight:600">Tamanho da Fonte</p>
+      <div class="accs-section-card">
+        <div style="display:flex;gap:8px">
+          ${[
+            {key:'small',label:'A',size:'12px'},
+            {key:'medium',label:'A',size:'15px'},
+            {key:'large',label:'A',size:'19px'},
+          ].map(f => `
+            <button onclick="setFontSize('${f.key}');this.parentNode.querySelectorAll('button').forEach(b=>b.style.outline='none');this.style.outline='2px solid var(--accent)'"
+              style="flex:1;padding:12px;border-radius:12px;background:var(--bg);cursor:pointer;font-size:${f.size};color:var(--text);font-weight:600;${currentFont===f.key?'outline:2px solid var(--accent)':''}">
+              ${f.label}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+      <div class="accs-section-card" style="margin-top:4px">
+        <div class="accs-toggle-row">
+          <div>
+            <span>Animações reduzidas</span>
+            <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">Desativa transições do app</div>
+          </div>
+          <div class="accs-toggle ${localStorage.getItem('accs_reduce_motion')==='on'?'on':''}" onclick="toggleReduceMotion(this)"></div>
         </div>
       </div>
     `;
@@ -2445,6 +2516,48 @@ window.toggleAccsNotif = function() {
   el.classList.toggle('on');
   localStorage.setItem('accs_notif', el.classList.contains('on') ? 'on' : 'off');
 };
+
+window.toggleAccsDeadline = function() {
+  const el = document.getElementById('accs-toggle-deadline');
+  el.classList.toggle('on');
+  localStorage.setItem('accs_notif_deadline', el.classList.contains('on') ? 'on' : 'off');
+};
+
+window.toggleAccsClassNotif = function() {
+  const el = document.getElementById('accs-toggle-class');
+  el.classList.toggle('on');
+  localStorage.setItem('accs_notif_class', el.classList.contains('on') ? 'on' : 'off');
+};
+
+window.toggleAccsSound = function() {
+  const el = document.getElementById('accs-toggle-sound');
+  el.classList.toggle('on');
+  localStorage.setItem('accs_notif_sound', el.classList.contains('on') ? 'on' : 'off');
+};
+
+window.toggleReduceMotion = function(el) {
+  el.classList.toggle('on');
+  const reduced = el.classList.contains('on');
+  localStorage.setItem('accs_reduce_motion', reduced ? 'on' : 'off');
+  document.documentElement.style.setProperty('--transition-speed', reduced ? '0ms' : '200ms');
+};
+
+window.setFontSize = function(size) {
+  const sizes = { small: '13px', medium: '15px', large: '17px' };
+  document.documentElement.style.setProperty('--base-font-size', sizes[size] || '15px');
+  localStorage.setItem('accs_font_size', size);
+};
+
+// Restore font size on load
+(function restoreFontSize() {
+  const size = localStorage.getItem('accs_font_size');
+  if (size) {
+    const sizes = { small: '13px', medium: '15px', large: '17px' };
+    document.documentElement.style.setProperty('--base-font-size', sizes[size] || '15px');
+  }
+  const reduceMotion = localStorage.getItem('accs_reduce_motion') === 'on';
+  if (reduceMotion) document.documentElement.style.setProperty('--transition-speed', '0ms');
+})();
 
 window.exportAccsData = function() {
   const data = {

@@ -2914,3 +2914,18 @@ a { color: inherit; text-decoration: none; }
   background: #ff6b8111;
 }
 .mural-like-btn:hover { opacity: 0.8; }
+
+/* ── FACAPE + Settings improvements ─────────────────────────────────── */
+.accs-toggle-row div > span:first-child { font-size: 14px; color: #fff; display: block; }
+.accs-toggle-row div { flex: 1; }
+
+.facape-status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.facape-status-badge.connected { background: rgba(46,213,115,0.15); color: #2ed573; }
+.facape-status-badge.disconnected { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.5); }
