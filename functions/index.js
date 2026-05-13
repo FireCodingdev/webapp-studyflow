@@ -364,7 +364,7 @@ exports.facapeProxy = onRequest(
   {
     cors: true,
     maxInstances: 10,
-    timeoutSeconds: 30,
+    timeoutSeconds: 60,
   },
   async (req, res) => {
 
@@ -373,7 +373,7 @@ exports.facapeProxy = onRequest(
       return res.status(405).json({ error: 'Método não permitido' });
     }
 
-    // 2. Valida autenticação Firebase — credenciais não transitam sem auth
+    // 2. Valida autenticação Firebase
     const authHeader = req.headers.authorization || '';
     const idToken    = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
     if (!idToken) return res.status(401).json({ error: 'Token de autenticação ausente' });
@@ -392,50 +392,77 @@ exports.facapeProxy = onRequest(
     const FACAPE_BASE      = 'https://sistemas.facape.br:8443/portalaluno';
     const FACAPE_LOGIN_URL = `${FACAPE_BASE}/login.do`;
 
+    const BASE_HEADERS = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
+    };
+
     try {
-      // Passo 1: obter cookies de sessão da página de login
+      // ── Passo 1: GET da página de login para obter JSESSIONID ──
       const loginPageResp = await fetch(FACAPE_LOGIN_URL, {
         method: 'GET',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-        },
+        headers: BASE_HEADERS,
         redirect: 'follow',
       });
 
-      // Captura cookies da sessão (JSESSIONID etc.)
-      const rawCookies = loginPageResp.headers.get('set-cookie') || '';
-      const sessionCookies = rawCookies
-        .split(',')
-        .map(c => c.split(';')[0].trim())
-        .filter(Boolean)
-        .join('; ');
+      console.log('[facapeProxy] GET login status:', loginPageResp.status, 'url:', loginPageResp.url);
+
+      // Captura correta de cookies: getAll() retorna array individual por cookie,
+      // evitando o bug de split por vírgula em datas de expiração
+      let sessionCookies = '';
+      const rawSetCookie = loginPageResp.headers.get('set-cookie');
+      if (rawSetCookie) {
+        // Node fetch junta todos set-cookie com ", " — separamos apenas pelo padrão
+        // "Nome=Valor; atributos, Nome2=Valor2" usando regex que respeita datas
+        const cookieParts = rawSetCookie.split(/,\s*(?=[A-Za-z0-9_\-]+=)/);
+        sessionCookies = cookieParts
+          .map(c => c.split(';')[0].trim())
+          .filter(Boolean)
+          .join('; ');
+      }
+
+      console.log('[facapeProxy] Cookies capturados:', sessionCookies || '(nenhum)');
 
       const loginHtml = await loginPageResp.text();
 
-      // Extrai token CSRF se existir no formulário
-      const csrfMatch = loginHtml.match(/name=["']_?csrf["'][^>]*value=["']([^"']+)["']/i)
-        || loginHtml.match(/name=["']_token["'][^>]*value=["']([^"']+)["']/i)
-        || loginHtml.match(/value=["']([^"']+)["'][^>]*name=["']_?csrf["']/i);
-      const csrf = csrfMatch?.[1] || '';
+      // Extrai todos os campos hidden do formulário de login (CSRF, tokens, etc.)
+      const hiddenFields = {};
+      const hiddenRegex = /<input[^>]*type=["']hidden["'][^>]*>/gi;
+      let hiddenMatch;
+      while ((hiddenMatch = hiddenRegex.exec(loginHtml)) !== null) {
+        const tag = hiddenMatch[0];
+        const nameM  = tag.match(/name=["']([^"']+)["']/i);
+        const valueM = tag.match(/value=["']([^"']*?)["']/i);
+        if (nameM && valueM) hiddenFields[nameM[1]] = valueM[1];
+      }
+      console.log('[facapeProxy] Hidden fields encontrados:', Object.keys(hiddenFields));
 
-      // Passo 2: POST de login com cookies de sessão
+      // ── Passo 2: POST de login ──
       const formData = new URLSearchParams();
+      // Inclui todos os campos hidden primeiro (tokens CSRF, viewstate, etc.)
+      for (const [k, v] of Object.entries(hiddenFields)) {
+        formData.append(k, v);
+      }
       formData.append('matricula', matricula);
       formData.append('senha', senha);
-      if (csrf) formData.append('_csrf', csrf);
+
+      const postHeaders = {
+        ...BASE_HEADERS,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Referer': FACAPE_LOGIN_URL,
+        'Origin': 'https://sistemas.facape.br:8443',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+      };
+      if (sessionCookies) postHeaders['Cookie'] = sessionCookies;
 
       const postResp = await fetch(FACAPE_LOGIN_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-          'Referer': FACAPE_LOGIN_URL,
-          ...(sessionCookies ? { 'Cookie': sessionCookies } : {}),
-        },
+        headers: postHeaders,
         body: formData.toString(),
         redirect: 'follow',
       });
@@ -443,45 +470,53 @@ exports.facapeProxy = onRequest(
       const postText = await postResp.text();
       const finalUrl = postResp.url || '';
 
-      // Verifica se login falhou
+      console.log('[facapeProxy] POST status:', postResp.status, 'finalUrl:', finalUrl);
+      console.log('[facapeProxy] HTML snippet (300 chars):', postText.slice(0, 300).replace(/\s+/g, ' '));
+
+      // ── Verifica falha de login (só strings inequívocas) ──
       const loginFailed =
         postText.includes('Senha incorreta') ||
         postText.includes('Login inválido') ||
         postText.includes('Matrícula não encontrada') ||
         postText.includes('senha inválida') ||
-        (finalUrl.includes('login.do') && postText.toLowerCase().includes('erro')) ||
-        postText.includes('alert(') ||
-        postText.includes('loginErro');
+        postText.includes('loginErro') ||
+        postText.includes('usuario_nao_encontrado') ||
+        /class=["'][^"']*erro[^"']*["'][^>]*>[^<]*matr[íi]cula/i.test(postText) ||
+        /class=["'][^"']*erro[^"']*["'][^>]*>[^<]*senha/i.test(postText);
 
       if (loginFailed) {
+        console.log('[facapeProxy] Login falhou por credenciais');
         return res.status(401).json({ ok: false, error: 'Matrícula ou senha incorretos.' });
       }
 
-      // Verifica se realmente logou (mudou de URL ou tem conteúdo do portal)
-      const loginSuccess =
-        !finalUrl.includes('login.do') ||
-        postText.includes('portalaluno') ||
+      // ── Verifica sucesso: saiu da página de login ──
+      const stillOnLogin = finalUrl.includes('login.do') || postResp.url.includes('login.do');
+      const hasPortalContent =
+        postText.includes('logout') ||
+        postText.includes('Sair') ||
+        postText.includes('sair') ||
         postText.includes('Bem-vindo') ||
         postText.includes('Horário') ||
         postText.includes('Notas') ||
-        postText.toLowerCase().includes('aluno');
+        postText.includes('portalaluno/aluno') ||
+        postText.includes('menu') && postText.toLowerCase().includes('aluno');
 
-      if (!loginSuccess) {
-        // Portal pode estar fora / estrutura mudou — retorna modo manual
+      if (stillOnLogin && !hasPortalContent) {
+        console.log('[facapeProxy] Portal não redirecionou — possível bloqueio ou estrutura mudou');
         return res.status(200).json({
           ok: false,
           needsManual: true,
-          error: 'Portal indisponível ou estrutura alterada. Use entrada manual.',
+          error: 'Portal indisponível ou com estrutura alterada. Use entrada manual.',
         });
       }
 
-      // Passo 3: extrair dados do HTML retornado
+      // ── Passo 3: extrair dados do HTML ──
       const data = scrapeHtml(postText, matricula);
+      console.log('[facapeProxy] Sucesso! Dados extraídos:', JSON.stringify(data).slice(0, 200));
       return res.status(200).json({ ok: true, data });
 
     } catch (err) {
-      console.error('[facapeProxy] Erro:', err.message);
-      // Em vez de falhar silenciosamente, informa o cliente para usar modo manual
+      console.error('[facapeProxy] Erro de conexão:', err.message);
       return res.status(200).json({
         ok: false,
         needsManual: true,
