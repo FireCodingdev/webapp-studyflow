@@ -2032,12 +2032,37 @@ a { color: inherit; text-decoration: none; }
   z-index: 1200;
   transform: translateX(-100%);
   transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* sub-panel clipado dentro */
+}
+/* O scroll fica num wrapper interno no HTML — o painel em si não scrola */
+.accs-panel-scroll {
+  flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
 .accs-panel.open { transform: translateX(0); }
-.accs-panel.accs-sub { z-index: 1300; background: #1c1c1e; }
+.accs-panel.accs-sub {
+  /* legado — não usado mais */
+  display: none;
+}
+
+/* Sub-panel agora fica DENTRO do painel principal, como camada sobreposta */
+.accs-sub-panel-inner {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: #1c1c1e;
+  z-index: 10;
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.accs-sub-panel-inner.open { transform: translateX(0); }
 
 .accs-header {
   padding: 20px 20px 28px;
@@ -2131,7 +2156,7 @@ a { color: inherit; text-decoration: none; }
   position: sticky; top: 0; z-index: 1;
 }
 .accs-sub-title { font-size: 18px; font-weight: 700; color: #fff; }
-.accs-sub-body { padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+.accs-sub-body { padding: 20px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto; flex: 1; }
 
 /* Sub-panel form elements */
 .accs-field { display: flex; flex-direction: column; gap: 6px; }

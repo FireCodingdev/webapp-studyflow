@@ -498,6 +498,7 @@
     </div>
 
     <!-- Settings list -->
+    <div class="accs-panel-scroll">
     <div class="accs-list">
       <div class="accs-item" onclick="openAccsSection('account')">
         <div class="accs-item-icon" style="background:#4a90d9"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
@@ -578,18 +579,20 @@
         <div class="accs-item-icon" style="background:#e05252"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></div>
         <div class="accs-item-text"><span class="accs-item-title" style="color:#e05252">Sair da Conta</span></div>
       </div>
-    </div>
-  </div>
+    </div> <!-- /accs-list danger -->
+    </div> <!-- /accs-panel-scroll -->
 
-  <!-- ===== ACCOUNT SETTINGS SUB-PANEL ===== -->
-  <div id="accs-sub-panel" class="accs-panel accs-sub">
-    <div class="accs-sub-header">
-      <button class="accs-close-btn" onclick="closeAccsSection()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-      </button>
-      <h2 id="accs-sub-title" class="accs-sub-title">Conta</h2>
+    <!-- ===== ACCOUNT SETTINGS SUB-PANEL (inside main panel) ===== -->
+    <div id="accs-sub-panel" class="accs-sub-panel-inner">
+      <div class="accs-sub-header">
+        <button class="accs-close-btn" onclick="closeAccsSection()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+        </button>
+        <h2 id="accs-sub-title" class="accs-sub-title">Conta</h2>
+      </div>
+      <div id="accs-sub-body" class="accs-sub-body"></div>
     </div>
-    <div id="accs-sub-body" class="accs-sub-body"></div>
+
   </div>
 
 </body>
