@@ -428,7 +428,7 @@ exports.facapeProxy = onRequest(
 
       console.log('[facapeProxy] Cookies capturados:', sessionCookies || '(nenhum)');
 
-      const loginHtml = await loginPageResp.text();
+      const loginHtml = new TextDecoder('iso-8859-1').decode(await loginPageResp.arrayBuffer());
 
       // LOG DIAGNÓSTICO — nomes reais dos campos do formulário
       const allInputs = [...loginHtml.matchAll(/<input[^>]*>/gi)].map(m => m[0]);
@@ -474,7 +474,7 @@ exports.facapeProxy = onRequest(
         redirect: 'follow',
       });
 
-      const postText = await postResp.text();
+      const postText = new TextDecoder('iso-8859-1').decode(await postResp.arrayBuffer());
       const finalUrl = postResp.url || '';
 
       console.log('[facapeProxy] POST status:', postResp.status, 'finalUrl:', finalUrl);
@@ -539,18 +539,19 @@ exports.facapeProxy = onRequest(
       const authHeaders = { ...BASE_HEADERS, 'Referer': `${FACAPE_BASE}/home.do` };
       if (sessionCookies) authHeaders['Cookie'] = sessionCookies;
 
+      const decode = r => r.arrayBuffer().then(b => new TextDecoder('iso-8859-1').decode(b));
       const [notasHtml, horarioHtml] = await Promise.all([
         fetch(`${FACAPE_BASE}/actNotas.do`, {
           method: 'GET',
           headers: authHeaders,
           redirect: 'follow',
-        }).then(r => r.text()).catch(() => ''),
+        }).then(decode).catch(() => ''),
         fetch(`${FACAPE_BASE}/actTurma.do`, {
           method: 'POST',
           headers: { ...authHeaders, 'Content-Type': 'application/x-www-form-urlencoded' },
           body: `m=horario&tmddtan=${encodeURIComponent(currentSemester)}`,
           redirect: 'follow',
-        }).then(r => r.text()).catch(() => ''),
+        }).then(decode).catch(() => ''),
       ]);
 
 
@@ -571,6 +572,13 @@ exports.facapeProxy = onRequest(
 );
 
 // ── Helpers de scraping (server-side, sem DOMParser) ────────────────────────
+
+// O portal FACAPE usa ISO-8859-1; decoda corretamente para não quebrar acentos
+async function fetchFacapeHtml(url, options) {
+  const resp = await fetch(url, options);
+  const buf = await resp.arrayBuffer();
+  return { html: new TextDecoder('iso-8859-1').decode(buf), resp };
+}
 
 function scrapeAll(homeHtml, notasHtml, horarioHtml, matricula) {
   // Nome: "27805 - DANIEL MATOS OITAVEN" no div#dadosAluno
@@ -664,30 +672,57 @@ function extractNotas(html) {
 function extractHorarios(html) {
   const horarios = [];
   // FACAPE: tabela com 7 colunas — cells[0]=hora, cells[1-6]=SEG/TER/QUA/QUI/SEX/SAB
+  // Formato de cada célula: "COMP - Turno - Turma - Período - Disciplina NOME - Prof(a) NOME - Sala"
   const dias = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
   const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+
   for (const row of rows) {
     const cells = (row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [])
-      .map(c => c.replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ').replace(/&[^;]+;/g, ' ').trim());
+      .map(c =>
+        c.replace(/<[^>]+>/g, '')
+         .replace(/&nbsp;/gi, ' ')
+         .replace(/&[^;]+;/g, ' ')
+         .replace(/\s+/g, ' ')
+         .trim()
+      );
+
     if (cells.length !== 7) continue;
     const horario = cleanText(cells[0]);
     if (!horario || !/^\d{1,2}:\d{2}/.test(horario)) continue;
+
     dias.forEach((dia, i) => {
       const celula = cleanText(cells[i + 1]);
-      if (!celula || celula.length < 4) return;
-      // Formato: "COMP - Turno - Turma - Período - Disciplina NOME - Prof(a) Nome - sala"
-      const matchDisc = celula.match(/Disciplina\s+([^-]+?)\s*-\s*Prof/i);
-      const aula = matchDisc ? cleanText(matchDisc[1]) : celula.slice(0, 60);
-      horarios.push({ dia, horario, aula: cleanText(aula) });
+      if (!celula || celula.length < 5) return;
+
+      // Divide por " - " para extrair cada campo
+      const partes = celula.split(/\s*-\s*/);
+
+      // Disciplina: parte que começa com "Disciplina "
+      const discParte = partes.find(p => /^Disciplina\s+/i.test(p)) || '';
+      const aula = cleanText(discParte.replace(/^Disciplina\s+/i, ''));
+      if (!aula) return;
+
+      // Professor: parte que começa com "Prof(a)"
+      const profIdx = partes.findIndex(p => /^Prof\(a\)/i.test(p));
+      const professor = profIdx >= 0
+        ? cleanText(partes[profIdx].replace(/^Prof\(a\)\s*/i, ''))
+        : '';
+
+      // Sala: parte logo após o professor (se tiver mais de 1 char)
+      const salaRaw = profIdx >= 0 ? (partes[profIdx + 1] || '').trim() : '';
+      const sala = salaRaw.length > 1 ? cleanText(salaRaw) : '';
+
+      // Turno
+      const mTurno = celula.match(/\b(Matutino|Noturno|Diurno|Vespertino)\b/i);
+      const turno = mTurno ? mTurno[1] : '';
+
+      horarios.push({ dia, horario, aula, professor, turno, sala });
     });
   }
+
   return horarios;
 }
 
 function cleanText(t) {
-  return (t || '')
-    .replace(/<[^>]+>/g, '')
-    .replace(/�/g, 'º')   // substitui  pelo º correto
-    .replace(/\s+/g, ' ')
-    .trim();
+  return (t || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 }
