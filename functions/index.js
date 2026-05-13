@@ -389,8 +389,9 @@ exports.facapeProxy = onRequest(
       return res.status(400).json({ error: 'matricula e senha são obrigatórios' });
     }
 
-    const FACAPE_BASE      = 'https://sistemas.facape.br:8443/portalaluno';
-    const FACAPE_LOGIN_URL = `${FACAPE_BASE}/login.do`;
+    const FACAPE_BASE       = 'https://sistemas.facape.br:8443/portalaluno';
+    const FACAPE_LOGIN_URL  = `${FACAPE_BASE}/login.do`;
+    const FACAPE_ACTION_URL = `${FACAPE_BASE}/actEntidade.do`;
 
     const BASE_HEADERS = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -454,7 +455,7 @@ exports.facapeProxy = onRequest(
         formData.append(k, v);
       }
       formData.append('enclogn', matricula);
-      formData.append('encpwd', senha);
+      formData.append('encpswd', senha);
 
       const postHeaders = {
         ...BASE_HEADERS,
@@ -466,7 +467,7 @@ exports.facapeProxy = onRequest(
       };
       if (sessionCookies) postHeaders['Cookie'] = sessionCookies;
 
-      const postResp = await fetch(FACAPE_LOGIN_URL, {
+      const postResp = await fetch(FACAPE_ACTION_URL, {
         method: 'POST',
         headers: postHeaders,
         body: formData.toString(),
@@ -498,14 +499,10 @@ exports.facapeProxy = onRequest(
       // ── Verifica sucesso: saiu da página de login ──
       const stillOnLogin = finalUrl.includes('login.do') || postResp.url.includes('login.do');
       const hasPortalContent =
-        postText.includes('logout') ||
-        postText.includes('Sair') ||
-        postText.includes('sair') ||
-        postText.includes('Bem-vindo') ||
-        postText.includes('Horário') ||
-        postText.includes('Notas') ||
-        postText.includes('portalaluno/aluno') ||
-        postText.includes('menu') && postText.toLowerCase().includes('aluno');
+        postText.includes('dadosAluno') ||
+        postText.includes('actLogoff') ||
+        postText.includes('actNotas') ||
+        postText.includes('Notas do Semestre');
 
       if (stillOnLogin && !hasPortalContent) {
         console.log('[facapeProxy] Portal não redirecionou — possível bloqueio ou estrutura mudou');
@@ -516,8 +513,49 @@ exports.facapeProxy = onRequest(
         });
       }
 
+      // ── Captura cookies da resposta POST (sessão autenticada) ──
+      const rawPostSetCookie = postResp.headers.get('set-cookie');
+      if (rawPostSetCookie) {
+        const cookieMap = {};
+        sessionCookies.split('; ').forEach(c => {
+          const i = c.indexOf('=');
+          if (i > 0) cookieMap[c.slice(0, i).trim()] = c.slice(i + 1);
+        });
+        rawPostSetCookie.split(/,\s*(?=[A-Za-z0-9_\-]+=)/).forEach(c => {
+          const nv = c.split(';')[0].trim();
+          const i = nv.indexOf('=');
+          if (i > 0) cookieMap[nv.slice(0, i).trim()] = nv.slice(i + 1);
+        });
+        sessionCookies = Object.entries(cookieMap).map(([k, v]) => `${k}=${v}`).join('; ');
+      }
+      console.log('[facapeProxy] Cookies autenticados:', sessionCookies.slice(0, 80) || '(nenhum)');
+
+      // ── Extrai semestre atual do HTML da home ──
+      const semMatch = postText.match(/<option\s[^>]*value=["']([^"']+)["']/i);
+      const currentSemester = semMatch ? semMatch[1] : '1/2026';
+      console.log('[facapeProxy] Semestre atual:', currentSemester);
+
+      // ── Requisições autenticadas para notas e horário ──
+      const authHeaders = { ...BASE_HEADERS, 'Referer': `${FACAPE_BASE}/home.do` };
+      if (sessionCookies) authHeaders['Cookie'] = sessionCookies;
+
+      const [notasHtml, horarioHtml] = await Promise.all([
+        fetch(`${FACAPE_BASE}/actNotas.do`, {
+          method: 'GET',
+          headers: authHeaders,
+          redirect: 'follow',
+        }).then(r => r.text()).catch(() => ''),
+        fetch(`${FACAPE_BASE}/actTurma.do`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `m=horario&tmddtan=${encodeURIComponent(currentSemester)}`,
+          redirect: 'follow',
+        }).then(r => r.text()).catch(() => ''),
+      ]);
+
+
       // ── Passo 3: extrair dados do HTML ──
-      const data = scrapeHtml(postText, matricula);
+      const data = scrapeAll(postText, notasHtml, horarioHtml, matricula);
       console.log('[facapeProxy] Sucesso! Dados extraídos:', JSON.stringify(data).slice(0, 200));
       return res.status(200).json({ ok: true, data });
 
@@ -534,31 +572,28 @@ exports.facapeProxy = onRequest(
 
 // ── Helpers de scraping (server-side, sem DOMParser) ────────────────────────
 
-function scrapeHtml(html, matricula) {
-  const nome    = extractByPatterns(html, [
-    /<[^>]*(?:class|id)=["'][^"']*(?:nome|aluno|welcome|usuario)[^"']*["'][^>]*>([^<]{3,80})</i,
-    /<h[1-4][^>]*>([^<]{5,80})<\/h[1-4]>/i,
-  ]) || `Aluno ${matricula}`;
+function scrapeAll(homeHtml, notasHtml, horarioHtml, matricula) {
+  // Nome: "27805 - DANIEL MATOS OITAVEN" no div#dadosAluno
+  const nomeMatch = homeHtml.match(/id=["']dadosAluno["'][\s\S]*?\d{4,6}\s*-\s*([^\n\r<]{3,80})/i);
+  const nome = nomeMatch ? cleanText(nomeMatch[1]) : `Aluno ${matricula}`;
 
-  const curso   = extractByPatterns(html, [
-    /<[^>]*(?:class|id)=["'][^"']*curso[^"']*["'][^>]*>([^<]{3,100})</i,
-    /Curso[:\s]*<[^>]+>([^<]{3,100})</i,
-  ]) || '';
+  // Curso: "CIENCIA DA COMPUTACAO - Noturno"
+  const cursoMatch = homeHtml.match(/id=["']dadosAluno["'][\s\S]*?([A-Z][A-Za-zÀ-ɏ\s]{5,60})\s*-\s*(?:Noturno|Diurno|Matutino|Vespertino)/i);
+  const curso = cursoMatch ? cleanText(cursoMatch[1]) : '';
 
-  const periodo = extractByPatterns(html, [
-    /<[^>]*(?:class|id)=["'][^"']*(?:periodo|semestre)[^"']*["'][^>]*>([^<]{1,20})</i,
-    /(?:Período|Semestre)[:\s]*<[^>]+>([^<]{1,20})</i,
-  ]) || '';
+  // Período/Grade: "Grade - 20191"
+  const gradeMatch = homeHtml.match(/Grade\s*-\s*(\d{4,6})/i);
+  const periodo = gradeMatch ? gradeMatch[1] : '';
 
-  const materias = extractMaterias(html);
-  const notas    = extractNotas(html);
-  const horarios = extractHorarios(html);
+  const materias = extractMaterias(notasHtml || homeHtml);
+  const notas    = extractNotas(notasHtml || homeHtml);
+  const horarios = extractHorarios(horarioHtml || homeHtml);
 
   return {
-    nome:      cleanText(nome),
+    nome:     cleanText(nome),
     matricula,
-    curso:     cleanText(curso),
-    periodo:   cleanText(periodo),
+    curso:    cleanText(curso),
+    periodo:  cleanText(periodo),
     materias,
     notas,
     horarios,
@@ -575,16 +610,17 @@ function extractByPatterns(html, patterns) {
 
 function extractMaterias(html) {
   const materias = [];
-  // Busca tabelas com cabeçalho de disciplina
-  const tableMatch = html.match(/<table[\s\S]*?<\/table>/gi) || [];
-  for (const table of tableMatch) {
-    if (!/disciplina|matéria|materia/i.test(table)) continue;
-    const rows = table.match(/<tr[\s\S]*?<\/tr>/gi) || [];
-    for (const row of rows.slice(1)) { // pula header
-      const cells = (row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [])
-        .map(c => c.replace(/<[^>]+>/g, '').trim());
-      if (cells[0]?.length > 2) {
-        materias.push({ nome: cleanText(cells[0]), codigo: cleanText(cells[1] || '') });
+  const seen = new Set();
+  // FACAPE: tabela de notas tem 15 colunas — cells[0]=Código, cells[2]=Disciplina
+  const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+  for (const row of rows) {
+    const cells = (row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [])
+      .map(c => c.replace(/<[^>]+>/g, '').replace(/&[^;]+;/g, ' ').trim());
+    if (cells.length >= 14 && cells[2] && cells[2].length > 3) {
+      const nome = cleanText(cells[2]);
+      if (!seen.has(nome.toLowerCase())) {
+        seen.add(nome.toLowerCase());
+        materias.push({ nome, codigo: cleanText(cells[0]) });
       }
     }
   }
@@ -593,49 +629,65 @@ function extractMaterias(html) {
 
 function extractNotas(html) {
   const notas = [];
-  const tableMatch = html.match(/<table[\s\S]*?<\/table>/gi) || [];
-  for (const table of tableMatch) {
-    if (!/nota|média|media|grade/i.test(table)) continue;
-    const rows = table.match(/<tr[\s\S]*?<\/tr>/gi) || [];
-    for (const row of rows.slice(1)) {
-      const cells = (row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [])
-        .map(c => c.replace(/<[^>]+>/g, '').trim());
-      if (cells.length >= 2 && cells[0]?.length > 2) {
-        notas.push({
-          disciplina: cleanText(cells[0]),
-          nota:       cleanText(cells[1] || ''),
-          situacao:   cleanText(cells[cells.length - 1] || ''),
-        });
-      }
-    }
+  // FACAPE: cells índices da tabela de notas (15 colunas):
+  // [0]=Código [1]=Curso [2]=Disciplina [3]=Turma [4]=Período [5]=Turno [6]=Letra
+  // [7]=Nota1  [8]=Nota2 [9]=Nota3      [10]=Final [11]=Média [12]=Faltas [13]=Limite [14]=Resultado
+  const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+  for (const row of rows) {
+    const cells = (row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [])
+      .map(c => c.replace(/<[^>]+>/g, '').replace(/&[^;]+;/g, ' ').trim());
+    if (cells.length < 14 || !cells[2] || cells[2].length <= 3) continue;
+
+    const parseNota = v => {
+      const n = parseFloat(cleanText(v));
+      return isNaN(n) ? null : n;
+    };
+
+    notas.push({
+      disciplina: cleanText(cells[2]),
+      codigo:     cleanText(cells[0]),
+      turma:      cleanText(cells[3]),
+      periodo:    cleanText(cells[4]),
+      turno:      cleanText(cells[5]),
+      nota1:      parseNota(cells[7]),
+      nota2:      parseNota(cells[8]),
+      nota3:      parseNota(cells[9]),
+      final:      parseNota(cells[10]),
+      faltas:     parseNota(cells[12]),
+      limite:     parseNota(cells[13]),
+      resultado:  cleanText(cells[14]),
+    });
   }
   return notas.slice(0, 20);
 }
 
 function extractHorarios(html) {
   const horarios = [];
-  const tableMatch = html.match(/<table[\s\S]*?<\/table>/gi) || [];
-  for (const table of tableMatch) {
-    if (!/seg|ter|qua|qui|sex|segunda|terça|quarta/i.test(table)) continue;
-    const headers = (table.match(/<th[^>]*>([\s\S]*?)<\/th>/gi) || [])
-      .map(h => h.replace(/<[^>]+>/g, '').trim().toLowerCase());
-    const rows = table.match(/<tr[\s\S]*?<\/tr>/gi) || [];
-    for (const row of rows.slice(1)) {
-      const cells = (row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [])
-        .map(c => c.replace(/<[^>]+>/g, '').trim());
-      const horario = cells[0];
-      if (!horario) continue;
-      headers.forEach((dia, i) => {
-        const aula = cells[i];
-        if (aula && aula.length > 2 && aula !== horario) {
-          horarios.push({ dia, horario, aula: cleanText(aula) });
-        }
-      });
-    }
+  // FACAPE: tabela com 7 colunas — cells[0]=hora, cells[1-6]=SEG/TER/QUA/QUI/SEX/SAB
+  const dias = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+  const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+  for (const row of rows) {
+    const cells = (row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [])
+      .map(c => c.replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ').replace(/&[^;]+;/g, ' ').trim());
+    if (cells.length !== 7) continue;
+    const horario = cleanText(cells[0]);
+    if (!horario || !/^\d{1,2}:\d{2}/.test(horario)) continue;
+    dias.forEach((dia, i) => {
+      const celula = cleanText(cells[i + 1]);
+      if (!celula || celula.length < 4) return;
+      // Formato: "COMP - Turno - Turma - Período - Disciplina NOME - Prof(a) Nome - sala"
+      const matchDisc = celula.match(/Disciplina\s+([^-]+?)\s*-\s*Prof/i);
+      const aula = matchDisc ? cleanText(matchDisc[1]) : celula.slice(0, 60);
+      horarios.push({ dia, horario, aula: cleanText(aula) });
+    });
   }
   return horarios;
 }
 
 function cleanText(t) {
-  return (t || '').replace(/\s+/g, ' ').replace(/<[^>]+>/g, '').trim();
+  return (t || '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/�/g, 'º')   // substitui  pelo º correto
+    .replace(/\s+/g, ' ')
+    .trim();
 }

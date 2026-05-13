@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -X POST https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyC8IqRSiaaS6Vk6IHm-JQeK4MdMqPZVkP0 -H 'Content-Type: application/json' -d '{\"returnSecureToken\": true}')",
+      "Bash(firebase --version)",
+      "Bash(firebase projects:list)",
+      "Bash(gcloud auth *)",
+      "Bash(node --input-type=module)",
+      "Bash(node \"/c/Users/danib/webapp-studyflow/test-facape.mjs\")",
+      "Bash(node test-facape.js)",
+      "Bash(gcloud iam *)",
+      "Bash(GOOGLE_APPLICATION_CREDENTIALS=\"\" node test-facape.js)",
+      "Bash(firebase auth:export --project=aplicativo-studyflow-4f501 --format=json)",
+      "Bash(firebase auth:export /tmp/users.json --project=aplicativo-studyflow-4f501 --format=json)",
+      "Read(//tmp/**)",
+      "Bash(firebase deploy *)",
+      "Bash(gcloud logging *)"
+    ]
+  }
+}
