@@ -354,3 +354,247 @@ exports.suggestGroups = suggestGroups;
 // ---- Exports novos — Moderação ----
 exports.moderatePost = moderatePost;
 exports.escalateReport = escalateReport;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// facapeProxy — proxy server-side para contornar CORS do Portal do Aluno FACAPE
+// O Node.js no servidor não tem restrição CORS, então pode fazer requests
+// diretamente para sistemas.facape.br:8443
+// ─────────────────────────────────────────────────────────────────────────────
+exports.facapeProxy = onRequest(
+  {
+    cors: true,
+    maxInstances: 10,
+    timeoutSeconds: 30,
+  },
+  async (req, res) => {
+
+    // 1. Só aceita POST
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Método não permitido' });
+    }
+
+    // 2. Valida autenticação Firebase — credenciais não transitam sem auth
+    const authHeader = req.headers.authorization || '';
+    const idToken    = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!idToken) return res.status(401).json({ error: 'Token de autenticação ausente' });
+
+    try {
+      await getAuth().verifyIdToken(idToken);
+    } catch {
+      return res.status(401).json({ error: 'Token inválido ou expirado' });
+    }
+
+    const { matricula, senha } = req.body;
+    if (!matricula || !senha) {
+      return res.status(400).json({ error: 'matricula e senha são obrigatórios' });
+    }
+
+    const FACAPE_BASE      = 'https://sistemas.facape.br:8443/portalaluno';
+    const FACAPE_LOGIN_URL = `${FACAPE_BASE}/login.do`;
+
+    try {
+      // Passo 1: obter cookies de sessão da página de login
+      const loginPageResp = await fetch(FACAPE_LOGIN_URL, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+        },
+        redirect: 'follow',
+      });
+
+      // Captura cookies da sessão (JSESSIONID etc.)
+      const rawCookies = loginPageResp.headers.get('set-cookie') || '';
+      const sessionCookies = rawCookies
+        .split(',')
+        .map(c => c.split(';')[0].trim())
+        .filter(Boolean)
+        .join('; ');
+
+      const loginHtml = await loginPageResp.text();
+
+      // Extrai token CSRF se existir no formulário
+      const csrfMatch = loginHtml.match(/name=["']_?csrf["'][^>]*value=["']([^"']+)["']/i)
+        || loginHtml.match(/name=["']_token["'][^>]*value=["']([^"']+)["']/i)
+        || loginHtml.match(/value=["']([^"']+)["'][^>]*name=["']_?csrf["']/i);
+      const csrf = csrfMatch?.[1] || '';
+
+      // Passo 2: POST de login com cookies de sessão
+      const formData = new URLSearchParams();
+      formData.append('matricula', matricula);
+      formData.append('senha', senha);
+      if (csrf) formData.append('_csrf', csrf);
+
+      const postResp = await fetch(FACAPE_LOGIN_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+          'Referer': FACAPE_LOGIN_URL,
+          ...(sessionCookies ? { 'Cookie': sessionCookies } : {}),
+        },
+        body: formData.toString(),
+        redirect: 'follow',
+      });
+
+      const postText = await postResp.text();
+      const finalUrl = postResp.url || '';
+
+      // Verifica se login falhou
+      const loginFailed =
+        postText.includes('Senha incorreta') ||
+        postText.includes('Login inválido') ||
+        postText.includes('Matrícula não encontrada') ||
+        postText.includes('senha inválida') ||
+        (finalUrl.includes('login.do') && postText.toLowerCase().includes('erro')) ||
+        postText.includes('alert(') ||
+        postText.includes('loginErro');
+
+      if (loginFailed) {
+        return res.status(401).json({ ok: false, error: 'Matrícula ou senha incorretos.' });
+      }
+
+      // Verifica se realmente logou (mudou de URL ou tem conteúdo do portal)
+      const loginSuccess =
+        !finalUrl.includes('login.do') ||
+        postText.includes('portalaluno') ||
+        postText.includes('Bem-vindo') ||
+        postText.includes('Horário') ||
+        postText.includes('Notas') ||
+        postText.toLowerCase().includes('aluno');
+
+      if (!loginSuccess) {
+        // Portal pode estar fora / estrutura mudou — retorna modo manual
+        return res.status(200).json({
+          ok: false,
+          needsManual: true,
+          error: 'Portal indisponível ou estrutura alterada. Use entrada manual.',
+        });
+      }
+
+      // Passo 3: extrair dados do HTML retornado
+      const data = scrapeHtml(postText, matricula);
+      return res.status(200).json({ ok: true, data });
+
+    } catch (err) {
+      console.error('[facapeProxy] Erro:', err.message);
+      // Em vez de falhar silenciosamente, informa o cliente para usar modo manual
+      return res.status(200).json({
+        ok: false,
+        needsManual: true,
+        error: `Erro de conexão com o portal: ${err.message}`,
+      });
+    }
+  }
+);
+
+// ── Helpers de scraping (server-side, sem DOMParser) ────────────────────────
+
+function scrapeHtml(html, matricula) {
+  const nome    = extractByPatterns(html, [
+    /<[^>]*(?:class|id)=["'][^"']*(?:nome|aluno|welcome|usuario)[^"']*["'][^>]*>([^<]{3,80})</i,
+    /<h[1-4][^>]*>([^<]{5,80})<\/h[1-4]>/i,
+  ]) || `Aluno ${matricula}`;
+
+  const curso   = extractByPatterns(html, [
+    /<[^>]*(?:class|id)=["'][^"']*curso[^"']*["'][^>]*>([^<]{3,100})</i,
+    /Curso[:\s]*<[^>]+>([^<]{3,100})</i,
+  ]) || '';
+
+  const periodo = extractByPatterns(html, [
+    /<[^>]*(?:class|id)=["'][^"']*(?:periodo|semestre)[^"']*["'][^>]*>([^<]{1,20})</i,
+    /(?:Período|Semestre)[:\s]*<[^>]+>([^<]{1,20})</i,
+  ]) || '';
+
+  const materias = extractMaterias(html);
+  const notas    = extractNotas(html);
+  const horarios = extractHorarios(html);
+
+  return {
+    nome:      cleanText(nome),
+    matricula,
+    curso:     cleanText(curso),
+    periodo:   cleanText(periodo),
+    materias,
+    notas,
+    horarios,
+  };
+}
+
+function extractByPatterns(html, patterns) {
+  for (const pattern of patterns) {
+    const m = html.match(pattern);
+    if (m?.[1]?.trim()) return m[1].trim();
+  }
+  return '';
+}
+
+function extractMaterias(html) {
+  const materias = [];
+  // Busca tabelas com cabeçalho de disciplina
+  const tableMatch = html.match(/<table[\s\S]*?<\/table>/gi) || [];
+  for (const table of tableMatch) {
+    if (!/disciplina|matéria|materia/i.test(table)) continue;
+    const rows = table.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+    for (const row of rows.slice(1)) { // pula header
+      const cells = (row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [])
+        .map(c => c.replace(/<[^>]+>/g, '').trim());
+      if (cells[0]?.length > 2) {
+        materias.push({ nome: cleanText(cells[0]), codigo: cleanText(cells[1] || '') });
+      }
+    }
+  }
+  return materias.slice(0, 20);
+}
+
+function extractNotas(html) {
+  const notas = [];
+  const tableMatch = html.match(/<table[\s\S]*?<\/table>/gi) || [];
+  for (const table of tableMatch) {
+    if (!/nota|média|media|grade/i.test(table)) continue;
+    const rows = table.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+    for (const row of rows.slice(1)) {
+      const cells = (row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [])
+        .map(c => c.replace(/<[^>]+>/g, '').trim());
+      if (cells.length >= 2 && cells[0]?.length > 2) {
+        notas.push({
+          disciplina: cleanText(cells[0]),
+          nota:       cleanText(cells[1] || ''),
+          situacao:   cleanText(cells[cells.length - 1] || ''),
+        });
+      }
+    }
+  }
+  return notas.slice(0, 20);
+}
+
+function extractHorarios(html) {
+  const horarios = [];
+  const tableMatch = html.match(/<table[\s\S]*?<\/table>/gi) || [];
+  for (const table of tableMatch) {
+    if (!/seg|ter|qua|qui|sex|segunda|terça|quarta/i.test(table)) continue;
+    const headers = (table.match(/<th[^>]*>([\s\S]*?)<\/th>/gi) || [])
+      .map(h => h.replace(/<[^>]+>/g, '').trim().toLowerCase());
+    const rows = table.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+    for (const row of rows.slice(1)) {
+      const cells = (row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [])
+        .map(c => c.replace(/<[^>]+>/g, '').trim());
+      const horario = cells[0];
+      if (!horario) continue;
+      headers.forEach((dia, i) => {
+        const aula = cells[i];
+        if (aula && aula.length > 2 && aula !== horario) {
+          horarios.push({ dia, horario, aula: cleanText(aula) });
+        }
+      });
+    }
+  }
+  return horarios;
+}
+
+function cleanText(t) {
+  return (t || '').replace(/\s+/g, ' ').replace(/<[^>]+>/g, '').trim();
+}
