@@ -2113,6 +2113,14 @@ window.openAccountSettings = function() {
   const ut = document.getElementById('accs-username-tag');
   if (ut) ut.textContent = '@' + name.toLowerCase().replace(/\s+/g, '').slice(0,16);
 
+  // Garante que o sub-panel está SEMPRE fechado ao abrir as configurações
+  const subPanel = document.getElementById('accs-sub-panel');
+  if (subPanel) {
+    subPanel.classList.remove('open');
+    const subBody = document.getElementById('accs-sub-body');
+    if (subBody) subBody.innerHTML = '';
+  }
+
   document.getElementById('account-settings-overlay').classList.add('active');
   document.getElementById('account-settings-panel').classList.add('open');
 
@@ -2127,7 +2135,11 @@ window.openAccountSettings = function() {
 window.closeAccountSettings = function() {
   document.getElementById('account-settings-overlay').classList.remove('active');
   document.getElementById('account-settings-panel').classList.remove('open');
-  closeAccsSection();
+  // Reseta sub-panel para evitar conteúdo residual na próxima abertura
+  const subPanel = document.getElementById('accs-sub-panel');
+  if (subPanel) subPanel.classList.remove('open');
+  const subBody = document.getElementById('accs-sub-body');
+  if (subBody) subBody.innerHTML = '';
 };
 
 window.openAccsSection = function(section) {
