@@ -429,6 +429,12 @@ exports.facapeProxy = onRequest(
 
       const loginHtml = await loginPageResp.text();
 
+      // LOG DIAGNÓSTICO — nomes reais dos campos do formulário
+      const allInputs = [...loginHtml.matchAll(/<input[^>]*>/gi)].map(m => m[0]);
+      console.log("[facapeProxy] INPUTS:", JSON.stringify(allInputs));
+      const allForms = [...loginHtml.matchAll(/<form[^>]*>/gi)].map(m => m[0]);
+      console.log("[facapeProxy] FORMS:", JSON.stringify(allForms));
+
       // Extrai todos os campos hidden do formulário de login (CSRF, tokens, etc.)
       const hiddenFields = {};
       const hiddenRegex = /<input[^>]*type=["']hidden["'][^>]*>/gi;
