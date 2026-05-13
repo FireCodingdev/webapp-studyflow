@@ -14,7 +14,11 @@
       "Bash(firebase auth:export /tmp/users.json --project=aplicativo-studyflow-4f501 --format=json)",
       "Read(//tmp/**)",
       "Bash(firebase deploy *)",
-      "Bash(gcloud logging *)"
+      "Bash(gcloud logging *)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\danib\\\\webapp-studyflow\" -Recurse -File)",
+      "Bash(Select-Object FullName)",
+      "PowerShell(head -100)",
+      "Bash(grep -E \"\\\\.\\(html|js|css\\)$\")"
     ]
   }
 }

@@ -540,7 +540,7 @@ exports.facapeProxy = onRequest(
       if (sessionCookies) authHeaders['Cookie'] = sessionCookies;
 
       const decode = r => r.arrayBuffer().then(b => new TextDecoder('iso-8859-1').decode(b));
-      const [notasHtml, horarioHtml] = await Promise.all([
+      const [notasHtml, horarioHtml, calendarioHtml] = await Promise.all([
         fetch(`${FACAPE_BASE}/actNotas.do`, {
           method: 'GET',
           headers: authHeaders,
@@ -552,11 +552,15 @@ exports.facapeProxy = onRequest(
           body: `m=horario&tmddtan=${encodeURIComponent(currentSemester)}`,
           redirect: 'follow',
         }).then(decode).catch(() => ''),
+        fetch(`${FACAPE_BASE}/actTurma.do?m=calendario`, {
+          method: 'GET',
+          headers: authHeaders,
+          redirect: 'follow',
+        }).then(decode).catch(() => ''),
       ]);
 
-
       // ── Passo 3: extrair dados do HTML ──
-      const data = scrapeAll(postText, notasHtml, horarioHtml, matricula);
+      const data = scrapeAll(postText, notasHtml, horarioHtml, calendarioHtml, matricula);
       console.log('[facapeProxy] Sucesso! Dados extraídos:', JSON.stringify(data).slice(0, 200));
       return res.status(200).json({ ok: true, data });
 
@@ -580,7 +584,7 @@ async function fetchFacapeHtml(url, options) {
   return { html: new TextDecoder('iso-8859-1').decode(buf), resp };
 }
 
-function scrapeAll(homeHtml, notasHtml, horarioHtml, matricula) {
+function scrapeAll(homeHtml, notasHtml, horarioHtml, calendarioHtml, matricula) {
   // Nome: "27805 - DANIEL MATOS OITAVEN" no div#dadosAluno
   const nomeMatch = homeHtml.match(/id=["']dadosAluno["'][\s\S]*?\d{4,6}\s*-\s*([^\n\r<]{3,80})/i);
   const nome = nomeMatch ? cleanText(nomeMatch[1]) : `Aluno ${matricula}`;
@@ -593,9 +597,10 @@ function scrapeAll(homeHtml, notasHtml, horarioHtml, matricula) {
   const gradeMatch = homeHtml.match(/Grade\s*-\s*(\d{4,6})/i);
   const periodo = gradeMatch ? gradeMatch[1] : '';
 
-  const materias = extractMaterias(notasHtml || homeHtml);
-  const notas    = extractNotas(notasHtml || homeHtml);
-  const horarios = extractHorarios(horarioHtml || homeHtml);
+  const materias  = extractMaterias(notasHtml || homeHtml);
+  const notas     = extractNotas(notasHtml || homeHtml);
+  const horarios  = extractHorarios(horarioHtml || homeHtml);
+  const calendario = extractCalendario(calendarioHtml || '');
 
   return {
     nome:     cleanText(nome),
@@ -605,6 +610,7 @@ function scrapeAll(homeHtml, notasHtml, horarioHtml, matricula) {
     materias,
     notas,
     horarios,
+    calendario,
   };
 }
 
@@ -721,6 +727,42 @@ function extractHorarios(html) {
   }
 
   return horarios;
+}
+
+function extractCalendario(html) {
+  // FACAPE: tabela "Calendário" — colunas: Código, Disciplina, Prova 1, Prova 2, Prova 3, Final
+  // Formato de data: DD/MM/AAAA — convertido para ISO AAAA-MM-DD
+  const calendario = [];
+  if (!html) return calendario;
+
+  const parseDate = v => {
+    const s = cleanText(v);
+    const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+  };
+
+  const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+  for (const row of rows) {
+    const cells = (row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [])
+      .map(c => c.replace(/<[^>]+>/g, '').replace(/&[^;]+;/g, ' ').trim());
+
+    // Tabela do calendário tem 6 colunas: Código, Disciplina, Prova1, Prova2, Prova3, Final
+    if (cells.length !== 6) continue;
+    if (!cells[0] || !cells[1] || cells[1].length < 3) continue;
+    // Filtra linhas de cabeçalho
+    if (/código|disciplina|prova|final/i.test(cells[0])) continue;
+
+    calendario.push({
+      codigo:     cleanText(cells[0]),
+      disciplina: cleanText(cells[1]),
+      prova1:     parseDate(cells[2]),
+      prova2:     parseDate(cells[3]),
+      prova3:     parseDate(cells[4]),
+      final:      parseDate(cells[5]),
+    });
+  }
+
+  return calendario;
 }
 
 function cleanText(t) {

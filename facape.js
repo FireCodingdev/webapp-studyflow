@@ -101,7 +101,7 @@ export async function loginFacape(matricula, senha) {
 // ── Importar dados para o StudyFlow ──────────────────────────────────────────
 
 export function importFacapeToStudyFlow(facapeData, STATE, save) {
-  const imported = { subjects: 0, classes: 0 };
+  const imported = { subjects: 0, classes: 0, exams: 0 };
 
   if (facapeData.materias?.length > 0) {
     const COLORS = ['#6c63ff','#ff6584','#ffa502','#2ed573','#1e90ff','#ff4757','#eccc68','#a29bfe','#fd79a8','#00cec9'];
@@ -131,6 +131,8 @@ export function importFacapeToStudyFlow(facapeData, STATE, save) {
       'dom': 0, 'domingo': 0,
     };
 
+    STATE.classes = STATE.classes.filter(c => !c.fromFacape);
+
     facapeData.horarios.forEach((h, i) => {
       const dayKey = h.dia?.toLowerCase().trim();
       const dayNum = DAY_MAP[dayKey];
@@ -152,14 +154,50 @@ export function importFacapeToStudyFlow(facapeData, STATE, save) {
         day:   dayNum,
         start: startTime,
         end:   endTime,
-        room:  '',
+        room:       h.sala       || '',
+        professor:  h.professor  || '',
+        turno:      h.turno      || '',
         fromFacape: true,
       });
       imported.classes++;
     });
   }
 
-  if (imported.subjects > 0 || imported.classes > 0) save();
+  if (facapeData.calendario?.length > 0) {
+    STATE.tasks = STATE.tasks.filter(t => !(t.fromFacape && t.type === 'exam'));
+
+    const provaKeys  = ['prova1', 'prova2', 'prova3', 'final'];
+    const provaNomes = ['Prova 1', 'Prova 2', 'Prova 3', 'Prova Final'];
+
+    facapeData.calendario.forEach((c) => {
+      const subject = STATE.subjects.find(s =>
+        s.name?.toLowerCase().includes(c.disciplina?.toLowerCase().slice(0, 8)) ||
+        c.disciplina?.toLowerCase().includes(s.name?.toLowerCase().slice(0, 8))
+      );
+
+      provaKeys.forEach((key, idx) => {
+        const deadline = c[key];
+        if (!deadline) return;
+
+        STATE.tasks.push({
+          id: `facape_exam_${Date.now()}_${c.codigo}_${key}`,
+          title: `${provaNomes[idx]} — ${c.disciplina}`,
+          subjectId:    subject?.id    || null,
+          subjectName:  c.disciplina,
+          subjectColor: subject?.color || '#ff4757',
+          type:     'exam',
+          deadline,
+          notes:    c.codigo || '',
+          done:     false,
+          fromFacape: true,
+          createdAt: new Date().toISOString(),
+        });
+        imported.exams++;
+      });
+    });
+  }
+
+  if (imported.subjects > 0 || imported.classes > 0 || imported.exams > 0) save();
   return imported;
 }
 
@@ -195,7 +233,7 @@ function _renderFacapeLogin(panel, uid, STATE, save, showToast, renderDashboard)
       <!-- O que será importado -->
       <div style="background:#2c2c2e;border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px">
         <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:2px">O que será importado</div>
-        ${['📛 Nome e matrícula', '🎓 Curso e período', '📚 Matérias do semestre', '📅 Horário das aulas', '📊 Últimas notas'].map(item => `
+        ${['📛 Nome e matrícula', '🎓 Curso e período', '📚 Matérias do semestre', '📅 Horário das aulas', '📊 Notas (P1, P2, P3, Final)', '🗓️ Calendário de provas'].map(item => `
           <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:rgba(255,255,255,0.85)">${item}</div>
         `).join('')}
       </div>
@@ -272,7 +310,11 @@ function _renderFacapeLogin(panel, uid, STATE, save, showToast, renderDashboard)
         const imported = importFacapeToStudyFlow(result.data, STATE, save);
         renderDashboard?.();
         _updateAcademicProfile(result.data, uid);
-        showToast(`✅ FACAPE conectado! ${imported.subjects} matérias e ${imported.classes} aulas importadas.`);
+        const parts = [];
+        if (imported.subjects) parts.push(`${imported.subjects} matérias`);
+        if (imported.classes)  parts.push(`${imported.classes} aulas`);
+        if (imported.exams)    parts.push(`${imported.exams} provas`);
+        showToast(`✅ FACAPE conectado! ${parts.join(', ')} importadas.`);
         _renderFacapeConnected(panel, result.data, uid, STATE, save, showToast, renderDashboard);
 
       } else if (result.needsManual) {
@@ -409,20 +451,59 @@ function _renderFacapeConnected(panel, data, uid, STATE, save, showToast, render
         ${_infoRow('Período', data.periodo || 'Não informado')}
         ${_infoRow('Matérias importadas', String(data.materias?.length || 0))}
         ${_infoRow('Horários importados', String(data.horarios?.length || 0))}
+        ${_infoRow('Provas no calendário', String(data.calendario?.length || 0))}
         ${_infoRow('Última sincronização', syncedAt, true)}
       </div>
 
       ${data.notas?.length > 0 ? `
-        <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.6px">Últimas Notas</div>
-        <div style="background:#2c2c2e;border-radius:14px;padding:4px 0">
-          ${data.notas.slice(0, 5).map(n => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
-              <span style="font-size:13px;color:rgba(255,255,255,0.7);max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(n.disciplina)}</span>
-              <span style="font-weight:700;font-size:15px;color:${parseFloat(n.nota) >= 5 ? '#2ed573' : '#e05252'}">${_esc(n.nota)}</span>
-            </div>
-          `).join('')}
+        <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.6px">Notas do Semestre</div>
+        <div style="background:#2c2c2e;border-radius:14px;overflow:hidden">
+          ${data.notas.map(n => {
+            const vals = [n.nota1, n.nota2, n.nota3].filter(v => v !== null && v !== undefined);
+            const media = vals.length ? (vals.reduce((s,v) => s + v, 0) / vals.length) : null;
+            const mediaStr = media !== null ? media.toFixed(1) : '—';
+            const mediaColor = media === null ? 'rgba(255,255,255,0.4)' : media >= 5 ? '#2ed573' : '#e05252';
+            const badge = (v) => v !== null && v !== undefined
+              ? `<span style="background:rgba(255,255,255,0.07);border-radius:6px;padding:2px 7px;font-size:11px;color:rgba(255,255,255,0.7)">${Number(v).toFixed(1)}</span>`
+              : `<span style="background:rgba(255,255,255,0.04);border-radius:6px;padding:2px 7px;font-size:11px;color:rgba(255,255,255,0.2)">—</span>`;
+            return `
+              <div style="padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                  <span style="font-size:12px;color:rgba(255,255,255,0.75);max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(n.disciplina)}</span>
+                  <span style="font-weight:700;font-size:15px;color:${mediaColor}">${mediaStr}</span>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <span style="font-size:10px;color:rgba(255,255,255,0.3);margin-right:2px">P1</span>${badge(n.nota1)}
+                  <span style="font-size:10px;color:rgba(255,255,255,0.3)">P2</span>${badge(n.nota2)}
+                  <span style="font-size:10px;color:rgba(255,255,255,0.3)">P3</span>${badge(n.nota3)}
+                  ${n.final !== null && n.final !== undefined ? `<span style="font-size:10px;color:rgba(255,255,255,0.3)">Fin</span>${badge(n.final)}` : ''}
+                  ${n.resultado ? `<span style="margin-left:auto;font-size:10px;font-weight:700;color:${n.resultado.toLowerCase().includes('apr') ? '#2ed573' : n.resultado.toLowerCase().includes('rep') ? '#e05252' : 'rgba(255,255,255,0.4)'}">${_esc(n.resultado)}</span>` : ''}
+                </div>
+              </div>`;
+          }).join('')}
         </div>
       ` : ''}
+
+      ${data.calendario?.length > 0 ? (() => {
+        const today = new Date().toISOString().slice(0,10);
+        const upcoming = data.calendario.flatMap(c =>
+          ['prova1','prova2','prova3','final'].map((k,i) => c[k] ? { data: c[k], disciplina: c.disciplina, tipo: ['P1','P2','P3','Final'][i] } : null).filter(Boolean)
+        ).filter(e => e.data >= today).sort((a,b) => a.data.localeCompare(b.data)).slice(0, 5);
+        if (!upcoming.length) return '';
+        const fmt = iso => { const [y,m,d] = iso.split('-'); return `${d}/${m}`; };
+        return `
+          <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.6px">Próximas Provas</div>
+          <div style="background:#2c2c2e;border-radius:14px;overflow:hidden">
+            ${upcoming.map(e => `
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
+                <div style="width:36px;height:36px;border-radius:10px;background:rgba(255,71,87,0.15);display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0">
+                  <span style="font-size:10px;font-weight:700;color:#ff4757">${_esc(e.tipo)}</span>
+                  <span style="font-size:11px;color:rgba(255,255,255,0.6)">${fmt(e.data)}</span>
+                </div>
+                <span style="font-size:12px;color:rgba(255,255,255,0.75);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(e.disciplina)}</span>
+              </div>`).join('')}
+          </div>`;
+      })() : ''}
 
       <button class="accs-save-btn" id="facape-resync-btn" style="background:linear-gradient(135deg,#1a3a6e,#2d5fb8)">
         🔄 Sincronizar Novamente
@@ -447,7 +528,11 @@ function _renderFacapeConnected(panel, data, uid, STATE, save, showToast, render
     if (result.ok) {
       const imported = importFacapeToStudyFlow(result.data, STATE, save);
       renderDashboard?.();
-      showToast(`✅ Sincronizado! ${imported.subjects} matérias, ${imported.classes} aulas.`);
+      const parts = [];
+      if (imported.subjects) parts.push(`${imported.subjects} matérias`);
+      if (imported.classes)  parts.push(`${imported.classes} aulas`);
+      if (imported.exams)    parts.push(`${imported.exams} provas`);
+      showToast(`✅ Sincronizado! ${parts.length ? parts.join(', ') : 'Dados atualizados'}.`);
       _renderFacapeConnected(panel, result.data, uid, STATE, save, showToast, renderDashboard);
     } else if (result.needsManual) {
       showToast('⚠️ Portal inacessível. Seus dados locais estão preservados.');
