@@ -355,35 +355,7 @@ function encontrarMateria(nomeTurma) {
 
 // ─── BOTÃO NA SIDEBAR ─────────────────────────────────────────────────────────
 function injetarBotaoClassroom() {
-  if (document.getElementById('classroom-btn-wrapper')) return;
-
-  const logoutBtn = document.querySelector('.sidebar-footer .logout-btn');
-  if (!logoutBtn) return;
-
-  const wrapper = document.createElement('div');
-  wrapper.id = 'classroom-btn-wrapper';
-  wrapper.className = 'classroom-btn-wrapper';
-  wrapper.innerHTML = `
-    <button id="classroom-connect-btn" class="classroom-btn" onclick="window._conectarClassroom()">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-      </svg>
-      <span id="classroom-btn-label">Conectar Classroom</span>
-    </button>
-  `;
-  logoutBtn.insertAdjacentElement('beforebegin', wrapper);
-
-  window._conectarClassroom = async () => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
-    const token = await getTokenValido(uid);
-    if (token) {
-      atualizarBotaoClassroom(true);
-      await sincronizarClassroom(uid, token);
-    } else {
-      conectarClassroom();
-    }
-  };
+  // Botão removido da sidebar — acesso via Configurações > Google Classroom
 }
 
 function atualizarBotaoClassroom(conectado, expirado = false) {
