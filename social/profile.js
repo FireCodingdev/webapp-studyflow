@@ -63,40 +63,117 @@ export async function renderAcademicProfileSection(uid) {
   const panel = document.getElementById('accs-sub-body');
   if (!panel) return;
 
+  // Loading state
+  panel.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:40px 20px;color:rgba(255,255,255,0.4)">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="animation:spin 1s linear infinite">
+        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+      </svg>
+      <span style="font-size:13px">Carregando perfil...</span>
+    </div>
+    <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>
+  `;
+
   const profile = await loadAcademicProfile(uid) || {};
+  const socialStats = await loadSocialStats(uid);
+
+  const skillsList = (profile.skills || []).join(', ');
 
   panel.innerHTML = `
+    <!-- Banner do perfil -->
+    <div class="accs-academic-banner">
+      <div class="accs-academic-banner-icon">🎓</div>
+      <div class="accs-academic-banner-info">
+        <div class="accs-academic-banner-title">${escapeHtmlContent(profile.institution || 'Perfil Acadêmico')}</div>
+        <div class="accs-academic-banner-sub">${escapeHtmlContent(profile.course || 'Configure sua instituição e curso abaixo')}</div>
+      </div>
+    </div>
+
+    <!-- Stats rápidas -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+      <div style="background:#2c2c2e;border-radius:12px;padding:12px;text-align:center">
+        <div style="font-size:20px;font-weight:800;color:#6c63ff">${socialStats.followers || 0}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:2px">Seguidores</div>
+      </div>
+      <div style="background:#2c2c2e;border-radius:12px;padding:12px;text-align:center">
+        <div style="font-size:20px;font-weight:800;color:#2ed573">${profile.semester || '—'}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:2px">Semestre</div>
+      </div>
+      <div style="background:#2c2c2e;border-radius:12px;padding:12px;text-align:center">
+        <div style="font-size:20px;font-weight:800;color:#ffa502">${(profile.skills || []).length}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:2px">Habilidades</div>
+      </div>
+    </div>
+
+    <!-- Formulário -->
     <div class="social-profile-form">
+
       <div class="accs-form-group">
         <label class="accs-label">Instituição</label>
-        <input id="sp-institution" class="accs-input" type="text" placeholder="Ex: UFPE, USP, IFPE..." value="${escapeForAttr(profile.institution || '')}">
+        <input id="sp-institution" class="accs-input" type="text"
+          placeholder="Ex: UFPE, USP, IFPE..."
+          value="${escapeForAttr(profile.institution || '')}">
       </div>
+
       <div class="accs-form-group">
         <label class="accs-label">Curso</label>
-        <input id="sp-course" class="accs-input" type="text" placeholder="Ex: Engenharia de Software" value="${escapeForAttr(profile.course || '')}">
+        <input id="sp-course" class="accs-input" type="text"
+          placeholder="Ex: Engenharia de Software"
+          value="${escapeForAttr(profile.course || '')}">
       </div>
+
       <div class="accs-form-group">
         <label class="accs-label">Semestre</label>
-        <input id="sp-semester" class="accs-input" type="number" min="1" max="20" placeholder="1" value="${profile.semester || 1}">
+        <input id="sp-semester" class="accs-input" type="number"
+          min="1" max="20" placeholder="1"
+          value="${profile.semester || 1}"
+          style="max-width:100px">
       </div>
+
       <div class="accs-form-group">
         <label class="accs-label">Habilidades / Matérias destaque</label>
-        <input id="sp-skills" class="accs-input" type="text" placeholder="Ex: Python, Cálculo, UX (separado por vírgula)" value="${escapeForAttr((profile.skills || []).join(', '))}">
+        <input id="sp-skills" class="accs-input" type="text"
+          placeholder="Ex: Python, Cálculo, UX (separado por vírgula)"
+          value="${escapeForAttr(skillsList)}">
+        <div class="accs-skills-preview" id="sp-skills-preview">
+          ${(profile.skills || []).map(s => `<span class="accs-skill-tag">${escapeHtmlContent(s)}</span>`).join('')}
+        </div>
       </div>
+
       <div class="accs-form-group">
         <label class="accs-label">Bio Acadêmica</label>
-        <textarea id="sp-bio" class="accs-input" rows="3" placeholder="Conte sobre seus interesses e objetivos acadêmicos...">${escapeHtmlContent(profile.bio || '')}</textarea>
+        <textarea id="sp-bio" class="accs-input" rows="3"
+          placeholder="Conte sobre seus interesses e objetivos acadêmicos...">${escapeHtmlContent(profile.bio || '')}</textarea>
       </div>
-      <button class="accs-save-btn" onclick="window.saveAcademicProfileUI()">💾 Salvar Perfil Acadêmico</button>
-      <div id="sp-feedback" style="margin-top:8px;font-size:13px;color:var(--accent);"></div>
+
+      <button class="accs-save-btn" onclick="window.saveAcademicProfileUI()" style="background:linear-gradient(135deg,#6c63ff,#a89dff)">
+        💾 Salvar Perfil Acadêmico
+      </button>
+
+      <div id="sp-feedback"></div>
     </div>
   `;
+
+  // Preview de habilidades ao digitar
+  const skillsInput = document.getElementById('sp-skills');
+  if (skillsInput) {
+    skillsInput.addEventListener('input', () => {
+      const tags = skillsInput.value.split(',').map(s => s.trim()).filter(Boolean);
+      const preview = document.getElementById('sp-skills-preview');
+      if (preview) {
+        preview.innerHTML = tags.map(s => `<span class="accs-skill-tag">${escapeHtmlContent(s)}</span>`).join('');
+      }
+    });
+  }
 }
 
 // ---- Handler chamado pelo onclick do botão salvar ----
 window.saveAcademicProfileUI = async function() {
   const user = auth.currentUser;
   if (!user) return;
+
+  const btn = document.querySelector('.accs-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando...'; }
 
   const skills = (document.getElementById('sp-skills')?.value || '')
     .split(',').map(s => s.trim()).filter(Boolean);
@@ -112,7 +189,20 @@ window.saveAcademicProfileUI = async function() {
 
   const ok = await saveAcademicProfile(user.uid, profileData);
   const fb = document.getElementById('sp-feedback');
-  if (fb) fb.textContent = ok ? '✅ Perfil salvo com sucesso!' : '❌ Erro ao salvar. Tente novamente.';
+
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = '💾 Salvar Perfil Acadêmico';
+  }
+
+  if (fb) {
+    if (ok) {
+      fb.innerHTML = `<div class="accs-save-feedback">✅ Perfil salvo com sucesso!</div>`;
+      setTimeout(() => { if (fb) fb.innerHTML = ''; }, 3500);
+    } else {
+      fb.innerHTML = `<div class="accs-save-feedback" style="background:rgba(224,82,82,0.12);border-color:rgba(224,82,82,0.25);color:#e05252">❌ Erro ao salvar. Tente novamente.</div>`;
+    }
+  }
 };
 
 // ---- Buscar perfis por instituição/curso (para sugestões de conexão) ----

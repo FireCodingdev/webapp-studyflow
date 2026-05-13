@@ -2059,8 +2059,11 @@ a { color: inherit; text-decoration: none; }
   transform: translateX(100%);
   transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
 }
 .accs-sub-panel-inner.open { transform: translateX(0); }
 
@@ -2156,7 +2159,7 @@ a { color: inherit; text-decoration: none; }
   position: sticky; top: 0; z-index: 1;
 }
 .accs-sub-title { font-size: 18px; font-weight: 700; color: #fff; }
-.accs-sub-body { padding: 20px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto; flex: 1; }
+.accs-sub-body { padding: 20px; display: flex; flex-direction: column; gap: 18px; flex: none; min-height: 0; }
 
 /* Sub-panel form elements */
 .accs-field { display: flex; flex-direction: column; gap: 6px; }
@@ -2650,6 +2653,98 @@ a { color: inherit; text-decoration: none; }
   gap: 14px;
   padding: 4px 0;
 }
+
+/* ─── Campos do Perfil Acadêmico ─────────────────────────────────── */
+.accs-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.accs-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.45);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+.accs-input {
+  background: #2c2c2e;
+  border: 1.5px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 15px;
+  color: #fff;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+.accs-input:focus {
+  border-color: #6c63ff;
+  box-shadow: 0 0 0 3px rgba(108,99,255,0.15);
+}
+.accs-input::placeholder { color: rgba(255,255,255,0.25); }
+textarea.accs-input {
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.5;
+}
+
+/* ─── Academic Profile Header Banner ─────────────────────────────── */
+.accs-academic-banner {
+  background: linear-gradient(135deg, #2d2060 0%, #1a3a6e 100%);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+.accs-academic-banner-icon {
+  width: 52px; height: 52px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.12);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  font-size: 26px;
+}
+.accs-academic-banner-info {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.accs-academic-banner-title {
+  font-size: 16px; font-weight: 700; color: #fff;
+}
+.accs-academic-banner-sub {
+  font-size: 12px; color: rgba(255,255,255,0.6); line-height: 1.4;
+}
+
+/* ─── Skills tags ────────────────────────────────────────────────── */
+.accs-skills-preview {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;
+}
+.accs-skill-tag {
+  background: rgba(108,99,255,0.2);
+  border: 1px solid rgba(108,99,255,0.35);
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #a89dff;
+  font-weight: 500;
+}
+
+/* ─── Save feedback ──────────────────────────────────────────────── */
+.accs-save-feedback {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 13px; font-weight: 600;
+  background: rgba(46,213,115,0.12);
+  border: 1px solid rgba(46,213,115,0.25);
+  color: #2ed573;
+  animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
 
 /* ═══════════════════════════════════════════════
    TURMAS POR MATÉRIA

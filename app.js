@@ -2148,17 +2148,29 @@ window.openAccsSection = function(section) {
 
   // ===== NOVO: Portal FACAPE =====
   if (section === 'facape') {
-    document.getElementById('accs-sub-panel').classList.add('open');
-    renderFacapeSettingsSection(user?.uid, STATE, save, showToast, renderDashboard);
+    const subPanel = document.getElementById('accs-sub-panel');
+    subPanel.classList.add('open');
+    // Garante que o sub-body está vazio antes de renderizar
+    const subBody = document.getElementById('accs-sub-body');
+    if (subBody) subBody.innerHTML = '';
+    // Usa rAF para garantir que o DOM foi atualizado antes de renderizar
+    requestAnimationFrame(() => {
+      renderFacapeSettingsSection(user?.uid, STATE, save, showToast, renderDashboard);
+    });
     return;
   }
   // ===================================
 
   // ===== NOVO: Perfil Acadêmico =====
   if (section === 'academic') {
-    document.getElementById('accs-sub-panel').classList.add('open');
-    import('./social/profile.js').then(({ renderAcademicProfileSection }) => {
-      renderAcademicProfileSection(user?.uid);
+    const subPanel = document.getElementById('accs-sub-panel');
+    subPanel.classList.add('open');
+    const subBody = document.getElementById('accs-sub-body');
+    if (subBody) subBody.innerHTML = '';
+    requestAnimationFrame(() => {
+      import('./social/profile.js').then(({ renderAcademicProfileSection }) => {
+        renderAcademicProfileSection(user?.uid);
+      });
     });
     return;
   }
@@ -2166,8 +2178,13 @@ window.openAccsSection = function(section) {
 
   // ===== NOVO: Google Classroom =====
   if (section === 'classroom') {
-    document.getElementById('accs-sub-panel').classList.add('open');
-    _renderClassroomSettingsSection(user?.uid);
+    const subPanel = document.getElementById('accs-sub-panel');
+    subPanel.classList.add('open');
+    const subBody = document.getElementById('accs-sub-body');
+    if (subBody) subBody.innerHTML = '';
+    requestAnimationFrame(() => {
+      _renderClassroomSettingsSection(user?.uid);
+    });
     return;
   }
   // ===================================
