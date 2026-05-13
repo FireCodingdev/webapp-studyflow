@@ -2292,6 +2292,11 @@ window.openAccsSection = function(section) {
       ` : ''}
       <button class="accs-save-btn" onclick="exportAccsData()">📤 Exportar Meus Dados</button>
       <button class="accs-danger-btn" onclick="clearAccsCache()">🗑️ Limpar Cache Local</button>
+      <div style="margin-top:8px;padding:14px 16px;background:rgba(224,82,82,0.07);border:1px solid rgba(224,82,82,0.2);border-radius:14px">
+        <div style="font-size:12px;font-weight:700;color:#e05252;margin-bottom:4px">Zona de Perigo</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.45);line-height:1.6;margin-bottom:12px">Apaga permanentemente todas as matérias, aulas, tarefas e flashcards — tanto locais quanto na nuvem. O app voltará ao estado inicial.</div>
+        <button class="accs-danger-btn" onclick="resetAllData()" style="width:100%;border-color:#e05252;color:#e05252">⚠️ Resetar Tudo</button>
+      </div>
     `;
   } else if (section === 'appearance') {
     const currentFont = localStorage.getItem('accs_font_size') || 'medium';
@@ -2610,6 +2615,42 @@ window.clearAccsCache = function() {
     localStorage.removeItem('studyflow_v2');
     showToast('🗑️ Cache limpo! Recarregue para sincronizar.');
   }
+};
+
+window.resetAllData = async function() {
+  const confirmed = confirm(
+    'Tem certeza? Esta ação apagará TODAS as suas matérias, aulas, tarefas e flashcards de forma permanente.\n\nEsta ação não pode ser desfeita.'
+  );
+  if (!confirmed) return;
+
+  STATE.subjects   = [];
+  STATE.classes    = [];
+  STATE.tasks      = [];
+  STATE.flashcards = [];
+
+  localStorage.removeItem('studyflow_v3');
+  localStorage.removeItem('studyflow_v2');
+  clearFacapeData();
+
+  const user = STATE.currentUser;
+  if (user) {
+    try {
+      const { setDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const { db } = await import('./firebase.js');
+      await setDoc(doc(db, 'users', user.uid), {
+        subjects: [], classes: [], tasks: [], flashcards: [],
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    } catch (e) {
+      console.warn('Erro ao limpar dados na nuvem:', e.message);
+    }
+  }
+
+  renderDashboard();
+  renderSchedule?.();
+  renderTasks?.();
+  window.closeAccountSettings?.();
+  showToast('✅ Dados resetados. O app está como novo!');
 };
 
 window.handleAvatarUpload = async function(event) {
