@@ -14,7 +14,7 @@ const STORAGE_KEY     = 'facape_data';
 const CREDENTIALS_KEY = 'facape_credentials';
 
 // URL da Cloud Function — ajuste para o seu projeto Firebase
-const PROXY_URL = 'https://us-central1-studyflow-app.cloudfunctions.net/facapeProxy';
+const PROXY_URL = 'https://us-central1-aplicativo-studyflow-4f501.cloudfunctions.net/facapeProxy';
 
 // ── Armazenamento local ───────────────────────────────────────────────────────
 
