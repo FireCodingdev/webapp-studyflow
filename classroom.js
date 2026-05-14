@@ -18,6 +18,7 @@ const CLASSROOM_SCOPES = [
   'https://www.googleapis.com/auth/classroom.coursework.me.readonly',
   'https://www.googleapis.com/auth/classroom.announcements.readonly',
   'https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly',
+  'https://www.googleapis.com/auth/drive.readonly',
 ].join(' ');
 
 // URL da Firebase Function de proxy
@@ -599,7 +600,11 @@ window._resumirPostClassroom = async function(btn) {
   const post = JSON.parse(btn.dataset.post.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"'));
 
   btn.disabled = true;
-  btn.textContent = '⏳ Analisando...';
+  btn.textContent = '⏳ Lendo material...';
+  const loadingInterval = setInterval(() => {
+    const msgs = ['⏳ Lendo PDF...', '⏳ Analisando...', '⏳ Gerando resumo...'];
+    btn.textContent = msgs[Math.floor(Date.now() / 3000) % msgs.length];
+  }, 3000);
 
   try {
     const uid = auth.currentUser?.uid;
@@ -610,11 +615,11 @@ window._resumirPostClassroom = async function(btn) {
       getTokenValido(uid),
     ]);
 
-    // Monta texto descritivo do post
+    // Monta contexto textual do post
     let textoPrincipal = '';
-    if (post.title)        textoPrincipal += `Título: ${post.title}\n`;
-    if (post.text)         textoPrincipal += `\nDescrição:\n${post.text}\n`;
-    if (post._nomeTurma)   textoPrincipal += `\nTurma: ${post._nomeTurma}\n`;
+    if (post.title)      textoPrincipal += `Título: ${post.title}\n`;
+    if (post.text)       textoPrincipal += `\nDescrição:\n${post.text}\n`;
+    if (post._nomeTurma) textoPrincipal += `\nTurma: ${post._nomeTurma}\n`;
 
     const nomesMateriais = (post.materials || []).map(m => {
       if (m.driveFile)    return `[Arquivo Drive] ${m.driveFile.driveFile?.title || ''}`;
@@ -625,59 +630,20 @@ window._resumirPostClassroom = async function(btn) {
     }).filter(Boolean);
     if (nomesMateriais.length) textoPrincipal += `\nMateriais anexados:\n${nomesMateriais.join('\n')}\n`;
 
-    // Tenta buscar conteúdo de arquivos Drive (primeiro arquivo de cada post)
-    let fileBase64 = null;
-    let fileMimeType = null;
+    // Pega ID do primeiro arquivo Drive para o servidor baixar
+    const driveMatl = (post.materials || []).find(m => m.driveFile?.driveFile?.id);
+    const driveFileId = driveMatl?.driveFile?.driveFile?.id || null;
 
-    if (classroomToken) {
-      const driveMatl = (post.materials || []).find(m => m.driveFile?.driveFile?.id);
-      if (driveMatl) {
-        const fileId = driveMatl.driveFile.driveFile.id;
-        try {
-          // Tenta exportar como PDF (Docs/Slides/Sheets)
-          const exportRes = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=application/pdf`,
-            { headers: { Authorization: `Bearer ${classroomToken}` } }
-          );
-          if (exportRes.ok) {
-            const buf = await exportRes.arrayBuffer();
-            const bytes = new Uint8Array(buf);
-            let binary = '';
-            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-            fileBase64 = btoa(binary);
-            fileMimeType = 'application/pdf';
-          } else {
-            // Fallback: tenta download direto (PDF nativo, imagens etc.)
-            const dlRes = await fetch(
-              `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-              { headers: { Authorization: `Bearer ${classroomToken}` } }
-            );
-            if (dlRes.ok) {
-              const ct = dlRes.headers.get('content-type') || 'application/octet-stream';
-              const supportedTypes = ['application/pdf','image/png','image/jpeg','image/webp','image/gif'];
-              if (supportedTypes.some(t => ct.includes(t))) {
-                const buf2 = await dlRes.arrayBuffer();
-                const bytes2 = new Uint8Array(buf2);
-                let bin2 = '';
-                for (let i = 0; i < bytes2.byteLength; i++) bin2 += String.fromCharCode(bytes2[i]);
-                fileBase64 = btoa(bin2);
-                fileMimeType = ct.split(';')[0].trim();
-              }
-            }
-          }
-        } catch (e) {
-          console.warn('[Resumir] Não foi possível baixar arquivo Drive:', e);
-        }
-      }
-    }
-
-    if (!textoPrincipal.trim() && !fileBase64) {
+    if (!textoPrincipal.trim() && !driveFileId) {
       throw new Error('Esta publicação não tem conteúdo para resumir.');
     }
 
+    // Envia ao servidor: ele baixa o PDF e chama o Gemini
     const body = { mode: 'summarize', text: textoPrincipal };
-    if (fileBase64)   body.fileBase64   = fileBase64;
-    if (fileMimeType) body.fileMimeType = fileMimeType;
+    if (driveFileId && classroomToken) {
+      body.driveFileId         = driveFileId;
+      body.classroomAccessToken = classroomToken;
+    }
 
     const resp = await fetch(GEMINI_PROXY, {
       method: 'POST',
@@ -690,18 +656,19 @@ window._resumirPostClassroom = async function(btn) {
       throw new Error(err.error || `Erro ${resp.status}`);
     }
 
-    const { resumo } = await resp.json();
-    _mostrarModalResumo(post.title || post.text || 'Publicação', resumo);
+    const { resumo, usedFile } = await resp.json();
+    _mostrarModalResumo(post.title || post.text || 'Publicação', resumo, usedFile);
 
   } catch (err) {
     alert('Não foi possível resumir: ' + err.message);
   } finally {
+    clearInterval(loadingInterval);
     btn.disabled = false;
     btn.textContent = '✨ Resumir';
   }
 };
 
-function _mostrarModalResumo(titulo, markdown) {
+function _mostrarModalResumo(titulo, markdown, usedFile) {
   document.getElementById('cl-resumo-modal')?.remove();
 
   const html = _markdownParaHtml(markdown);
@@ -715,7 +682,7 @@ function _mostrarModalResumo(titulo, markdown) {
         <div class="cl-modal-title">
           <span class="cl-modal-icon">✨</span>
           <div>
-            <div class="cl-modal-label">Resumo com IA</div>
+            <div class="cl-modal-label">Resumo com IA${usedFile ? ' · 📄 PDF analisado' : ''}</div>
             <div class="cl-modal-subtitle">${esc(titulo.slice(0, 80))}${titulo.length > 80 ? '…' : ''}</div>
           </div>
         </div>

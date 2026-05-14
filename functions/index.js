@@ -167,8 +167,44 @@ exports.geminiProxy = onRequest(
 
     // ── Modo de resumo de publicações do Classroom ────────────────────────────
     if (mode === 'summarize') {
-      const { text, fileBase64, fileMimeType } = req.body;
-      if (!text) return res.status(400).json({ error: 'text é obrigatório para mode=summarize' });
+      const { text, driveFileId, classroomAccessToken } = req.body;
+      if (!text && !driveFileId) return res.status(400).json({ error: 'text ou driveFileId são obrigatórios para mode=summarize' });
+
+      // Baixa o arquivo Drive no servidor (evita CORS e limite de payload do browser)
+      let fileBase64 = null;
+      let fileMimeType = null;
+
+      if (driveFileId && classroomAccessToken) {
+        try {
+          // 1. Tenta exportar como PDF (Google Docs, Slides, Sheets)
+          const exportRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${driveFileId}/export?mimeType=application/pdf`,
+            { headers: { Authorization: `Bearer ${classroomAccessToken}` } }
+          );
+          if (exportRes.ok) {
+            const buf = await exportRes.arrayBuffer();
+            fileBase64 = Buffer.from(buf).toString('base64');
+            fileMimeType = 'application/pdf';
+          } else {
+            // 2. Fallback: download direto (PDF nativo, imagens)
+            const dlRes = await fetch(
+              `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
+              { headers: { Authorization: `Bearer ${classroomAccessToken}` } }
+            );
+            if (dlRes.ok) {
+              const ct = dlRes.headers.get('content-type') || '';
+              const supported = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+              if (supported.some(t => ct.includes(t))) {
+                const buf = await dlRes.arrayBuffer();
+                fileBase64 = Buffer.from(buf).toString('base64');
+                fileMimeType = ct.split(';')[0].trim();
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[summarize] Falha ao baixar arquivo Drive:', e.message);
+        }
+      }
 
       const SUMMARIZE_PROMPT = `Você é um assistente acadêmico universitário. Analise o conteúdo abaixo (publicação do Google Classroom) e produza um relatório completo em português brasileiro usando markdown.
 
@@ -190,10 +226,10 @@ Sugira 3–4 dicas práticas de como estudar este conteúdo.
 CONTEÚDO DA PUBLICAÇÃO:
 `;
 
-      const parts = [{ text: SUMMARIZE_PROMPT + text }];
+      const parts = [{ text: SUMMARIZE_PROMPT + (text || '') }];
       if (fileBase64 && fileMimeType) {
         parts.push({ inlineData: { mimeType: fileMimeType, data: fileBase64 } });
-        parts[0].text += '\n\n(O arquivo anexo também foi enviado para análise — priorize seu conteúdo.)';
+        parts[0].text += '\n\n(O arquivo PDF foi enviado junto — analise TODO o conteúdo do arquivo e priorize-o sobre o texto acima.)';
       }
 
       try {
@@ -203,13 +239,14 @@ CONTEÚDO DA PUBLICAÇÃO:
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts }],
-            generationConfig: { temperature: 0.4, maxOutputTokens: 4096 },
+            generationConfig: { temperature: 0.4, maxOutputTokens: 8192 },
           }),
         });
         const result  = await apiResp.json();
         const resumo  = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
         if (!resumo) return res.status(500).json({ error: 'IA não retornou conteúdo. Tente novamente.' });
-        return res.status(200).json({ resumo });
+        const usedFile = !!fileBase64;
+        return res.status(200).json({ resumo, usedFile });
       } catch (err) {
         return res.status(502).json({ error: `Erro ao chamar Gemini: ${err.message}` });
       }
