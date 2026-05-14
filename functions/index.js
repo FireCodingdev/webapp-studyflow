@@ -677,11 +677,14 @@ function extractNotas(html) {
 
 function extractHorarios(html) {
   const horarios = [];
-  // FACAPE: tabela com 7 colunas — cells[0]=hora, cells[1-6]=SEG/TER/QUA/QUI/SEX/SAB
-  // Formato de cada célula: "COMP - Turno - Turma - Período - Disciplina NOME - Prof(a) NOME - Sala"
   const dias = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
   const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) || [];
 
+  const toMinutes = t => { const [h, m] = t.split(':').map(Number); return h * 60 + (m || 0); };
+  const fromMinutes = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+  // Primeira passagem: coleta apenas as linhas de horário válidas
+  const timeRows = [];
   for (const row of rows) {
     const cells = (row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [])
       .map(c =>
@@ -691,40 +694,47 @@ function extractHorarios(html) {
          .replace(/\s+/g, ' ')
          .trim()
       );
-
     if (cells.length !== 7) continue;
     const horario = cleanText(cells[0]);
     if (!horario || !/^\d{1,2}:\d{2}/.test(horario)) continue;
+    timeRows.push({ horario, cells });
+  }
+
+  timeRows.forEach(({ horario, cells }, idx) => {
+    const startMin = toMinutes(horario);
+    const nextHorario = timeRows[idx + 1]?.horario;
+    // Usa o próximo slot como fim; se o intervalo for > 2h (ex: transição manhã→tarde) usa +2h
+    const endMin = nextHorario && (toMinutes(nextHorario) - startMin) <= 120
+      ? toMinutes(nextHorario)
+      : startMin + 120;
+    const startFmt = fromMinutes(startMin);
+    const endFmt   = fromMinutes(endMin);
+    const horarioFmt = `${startFmt} - ${endFmt}`;
 
     dias.forEach((dia, i) => {
       const celula = cleanText(cells[i + 1]);
       if (!celula || celula.length < 5) return;
 
-      // Divide por " - " para extrair cada campo
       const partes = celula.split(/\s*-\s*/);
 
-      // Disciplina: parte que começa com "Disciplina "
       const discParte = partes.find(p => /^Disciplina\s+/i.test(p)) || '';
       const aula = cleanText(discParte.replace(/^Disciplina\s+/i, ''));
       if (!aula) return;
 
-      // Professor: parte que começa com "Prof(a)"
       const profIdx = partes.findIndex(p => /^Prof\(a\)/i.test(p));
       const professor = profIdx >= 0
         ? cleanText(partes[profIdx].replace(/^Prof\(a\)\s*/i, ''))
         : '';
 
-      // Sala: parte logo após o professor (se tiver mais de 1 char)
       const salaRaw = profIdx >= 0 ? (partes[profIdx + 1] || '').trim() : '';
       const sala = salaRaw.length > 1 ? cleanText(salaRaw) : '';
 
-      // Turno
       const mTurno = celula.match(/\b(Matutino|Noturno|Diurno|Vespertino)\b/i);
       const turno = mTurno ? mTurno[1] : '';
 
-      horarios.push({ dia, horario, aula, professor, turno, sala });
+      horarios.push({ dia, horario: horarioFmt, aula, professor, turno, sala });
     });
-  }
+  });
 
   return horarios;
 }

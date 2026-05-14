@@ -18,7 +18,13 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\danib\\\\webapp-studyflow\" -Recurse -File)",
       "Bash(Select-Object FullName)",
       "PowerShell(head -100)",
-      "Bash(grep -E \"\\\\.\\(html|js|css\\)$\")"
+      "Bash(grep -E \"\\\\.\\(html|js|css\\)$\")",
+      "Bash(waitfor /t 30 signal)",
+      "Bash(exit 0)",
+      "Bash(waitfor /t 60 signal)",
+      "Bash(waitfor /t 90 signal)",
+      "Bash(node functions/test-facape.js)",
+      "Bash(node -e ' *)"
     ]
   }
 }
