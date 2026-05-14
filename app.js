@@ -2455,13 +2455,25 @@ async function _renderClassroomSettingsSection(uid) {
 
   window._accsClassroomConnect = function() {
     window._conectarClassroom?.();
-    // Reatualiza o painel após 3s (aguarda OAuth)
-    setTimeout(() => _renderClassroomSettingsSection(uid), 3000);
+    // Re-renderiza o painel quando o OAuth retornar (mensagem do popup)
+    function onOAuthDone(e) {
+      if (e.origin !== location.origin) return;
+      if (e.data?.type !== 'classroom-code') return;
+      window.removeEventListener('message', onOAuthDone);
+      setTimeout(() => _renderClassroomSettingsSection(uid), 1500);
+    }
+    window.addEventListener('message', onOAuthDone);
   };
 
   window._accsClassroomReconnect = function() {
     window._conectarClassroom?.();
-    setTimeout(() => _renderClassroomSettingsSection(uid), 3000);
+    function onOAuthDone(e) {
+      if (e.origin !== location.origin) return;
+      if (e.data?.type !== 'classroom-code') return;
+      window.removeEventListener('message', onOAuthDone);
+      setTimeout(() => _renderClassroomSettingsSection(uid), 1500);
+    }
+    window.addEventListener('message', onOAuthDone);
   };
 
   window._accsClassroomSync = async function() {

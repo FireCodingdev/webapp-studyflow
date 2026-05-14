@@ -43,6 +43,19 @@ export function initClassroom(STATE, hooks) {
     const token = await getTokenValido(uid);
     if (token) renderPostsClassroom(token);
   };
+
+  // Expõe função de conexão para o painel de configurações
+  window._conectarClassroom = async () => {
+    const currentUid = auth.currentUser?.uid;
+    if (!currentUid) return;
+    const token = await getTokenValido(currentUid);
+    if (token) {
+      atualizarBotaoClassroom(true);
+      await sincronizarClassroom(currentUid, token);
+    } else {
+      conectarClassroom();
+    }
+  };
 }
 
 // ─── PKCE helpers ─────────────────────────────────────────────────────────────
@@ -356,6 +369,7 @@ function encontrarMateria(nomeTurma) {
 // ─── BOTÃO NA SIDEBAR ─────────────────────────────────────────────────────────
 function injetarBotaoClassroom() {
   // Botão removido da sidebar — acesso via Configurações > Google Classroom
+  // window._conectarClassroom é definido em initClassroom
 }
 
 function atualizarBotaoClassroom(conectado, expirado = false) {
