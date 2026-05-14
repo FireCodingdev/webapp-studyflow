@@ -2635,12 +2635,12 @@ window.resetAllData = async function() {
   const user = STATE.currentUser;
   if (user) {
     try {
-      const { setDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const { updateDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
       const { db } = await import('./firebase.js');
-      await setDoc(doc(db, 'users', user.uid), {
+      await updateDoc(doc(db, 'users', user.uid), {
         subjects: [], classes: [], tasks: [], flashcards: [],
         updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      });
     } catch (e) {
       console.warn('Erro ao limpar dados na nuvem:', e.message);
     }
@@ -2651,6 +2651,7 @@ window.resetAllData = async function() {
   renderTasks?.();
   window.closeAccountSettings?.();
   showToast('✅ Dados resetados. O app está como novo!');
+  initClassroom(STATE, { save, renderTasks, renderDashboard, showToast });
 };
 
 window.handleAvatarUpload = async function(event) {
