@@ -165,6 +165,8 @@ async function trocarCodePorToken(code, uid) {
     _hooks.showToast('✅ Google Classroom conectado!');
     atualizarBotaoClassroom(true);
     await sincronizarClassroom(uid, data.access_token);
+    // Avisa o painel de configurações que a conexão foi concluída
+    window.dispatchEvent(new CustomEvent('classroom-connected'));
 
   } catch (err) {
     console.error('[Classroom] Erro na troca de token:', err);
@@ -630,18 +632,19 @@ window._resumirPostClassroom = async function(btn) {
     }).filter(Boolean);
     if (nomesMateriais.length) textoPrincipal += `\nMateriais anexados:\n${nomesMateriais.join('\n')}\n`;
 
-    // Pega ID do primeiro arquivo Drive para o servidor baixar
-    const driveMatl = (post.materials || []).find(m => m.driveFile?.driveFile?.id);
-    const driveFileId = driveMatl?.driveFile?.driveFile?.id || null;
+    // Pega ID e link do primeiro arquivo Drive para o servidor baixar
+    const driveMatl    = (post.materials || []).find(m => m.driveFile?.driveFile?.id);
+    const driveFileId  = driveMatl?.driveFile?.driveFile?.id || null;
+    const driveAltLink = driveMatl?.driveFile?.driveFile?.alternateLink || null;
 
     if (!textoPrincipal.trim() && !driveFileId) {
       throw new Error('Esta publicação não tem conteúdo para resumir.');
     }
 
-    // Envia ao servidor: ele baixa o PDF e chama o Gemini
+    // Envia ao servidor: ele tenta baixar o PDF do Drive e chama o Gemini
     const body = { mode: 'summarize', text: textoPrincipal };
     if (driveFileId && classroomToken) {
-      body.driveFileId         = driveFileId;
+      body.driveFileId          = driveFileId;
       body.classroomAccessToken = classroomToken;
     }
 
@@ -657,7 +660,7 @@ window._resumirPostClassroom = async function(btn) {
     }
 
     const { resumo, usedFile } = await resp.json();
-    _mostrarModalResumo(post.title || post.text || 'Publicação', resumo, usedFile);
+    _mostrarModalResumo(post.title || post.text || 'Publicação', resumo, usedFile, driveFileId, driveAltLink, textoPrincipal, idToken);
 
   } catch (err) {
     alert('Não foi possível resumir: ' + err.message);
@@ -668,10 +671,11 @@ window._resumirPostClassroom = async function(btn) {
   }
 };
 
-function _mostrarModalResumo(titulo, markdown, usedFile) {
+function _mostrarModalResumo(titulo, markdown, usedFile, driveFileId, driveAltLink, textoPrincipal, idToken) {
   document.getElementById('cl-resumo-modal')?.remove();
 
-  const html = _markdownParaHtml(markdown);
+  const showBanner = driveFileId && !usedFile;
+  const labelExtra = usedFile ? ' · 📄 PDF analisado' : (driveFileId ? ' · ⚠️ sem PDF' : '');
 
   const overlay = document.createElement('div');
   overlay.id = 'cl-resumo-modal';
@@ -682,29 +686,113 @@ function _mostrarModalResumo(titulo, markdown, usedFile) {
         <div class="cl-modal-title">
           <span class="cl-modal-icon">✨</span>
           <div>
-            <div class="cl-modal-label">Resumo com IA${usedFile ? ' · 📄 PDF analisado' : ''}</div>
+            <div class="cl-modal-label">Resumo com IA${labelExtra}</div>
             <div class="cl-modal-subtitle">${esc(titulo.slice(0, 80))}${titulo.length > 80 ? '…' : ''}</div>
           </div>
         </div>
         <div class="cl-modal-actions">
-          <button class="cl-modal-btn cl-modal-btn--download" id="cl-modal-download">⬇️ Baixar</button>
+          <button class="cl-modal-btn cl-modal-btn--download" id="cl-modal-download">⬇️ Baixar resumo</button>
           <button class="cl-modal-btn cl-modal-btn--close" id="cl-modal-close">✕</button>
         </div>
       </div>
-      <div class="cl-modal-body" id="cl-modal-content">${html}</div>
+      ${showBanner ? `
+      <div class="cl-modal-upload-banner" id="cl-modal-upload-banner">
+        <span>⚠️ Não consegui acessar o PDF automaticamente.</span>
+        <input type="file" id="cl-modal-file-input" accept=".pdf,image/*" style="display:none">
+        <button class="cl-modal-btn cl-modal-btn--resumir-manual" id="cl-modal-retry-btn">
+          📥 Baixar PDF e resumir novamente
+        </button>
+      </div>` : ''}
+      <div class="cl-modal-body" id="cl-modal-content">${_markdownParaHtml(markdown)}</div>
     </div>`;
 
   document.body.appendChild(overlay);
 
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   document.getElementById('cl-modal-close').addEventListener('click', () => overlay.remove());
+
+  const contentEl = document.getElementById('cl-modal-content');
+  if (contentEl) contentEl._mdSource = markdown;
+
   document.getElementById('cl-modal-download').addEventListener('click', () => {
-    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    const src  = contentEl?._mdSource || markdown;
+    const blob = new Blob([src], { type: 'text/markdown;charset=utf-8' });
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
     a.download = `resumo-${titulo.slice(0, 40).replace(/[^a-z0-9]/gi, '_')}.md`;
     a.click();
     URL.revokeObjectURL(a.href);
+  });
+
+  if (!showBanner) return;
+
+  const fileInput = document.getElementById('cl-modal-file-input');
+  const retryBtn  = document.getElementById('cl-modal-retry-btn');
+
+  // Botão único: abre o PDF no Drive + abre o seletor de arquivo
+  retryBtn.addEventListener('click', () => {
+    if (driveAltLink) window.open(driveAltLink, '_blank');
+    fileInput.click();
+  });
+
+  // Assim que o arquivo for selecionado, re-resume automaticamente
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+
+    const banner = document.getElementById('cl-modal-upload-banner');
+    if (banner) {
+      banner.innerHTML = '<span style="color:var(--text2);font-size:12px">⏳ Lendo PDF e gerando resumo...</span>';
+    }
+
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise((resolve, reject) => {
+        reader.onload  = e => resolve(e.target.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const resp = await fetch(GEMINI_PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({
+          mode: 'summarize',
+          text: textoPrincipal,
+          fileBase64: base64,
+          fileMimeType: file.type || 'application/pdf',
+        }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || `Erro ${resp.status}`);
+      }
+
+      const { resumo: novoResumo } = await resp.json();
+
+      if (contentEl) {
+        contentEl.innerHTML = _markdownParaHtml(novoResumo);
+        contentEl._mdSource = novoResumo;
+      }
+      if (banner) {
+        banner.innerHTML = '<span style="color:#2ed573;font-size:13px;font-weight:600">✅ PDF analisado com sucesso!</span>';
+        setTimeout(() => banner.remove(), 3000);
+      }
+      const labelEl = overlay.querySelector('.cl-modal-label');
+      if (labelEl) labelEl.textContent = 'Resumo com IA · 📄 PDF analisado';
+
+    } catch (err) {
+      if (banner) {
+        banner.innerHTML = `
+          <span style="color:#ff4757">❌ Erro: ${esc(err.message)}</span>
+          <button class="cl-modal-btn cl-modal-btn--resumir-manual" id="cl-modal-retry-btn" style="margin-left:8px">Tentar novamente</button>`;
+        document.getElementById('cl-modal-retry-btn')?.addEventListener('click', () => {
+          if (driveAltLink) window.open(driveAltLink, '_blank');
+          fileInput.click();
+        });
+      }
+    }
   });
 }
 
@@ -815,6 +903,16 @@ function esc(str) {
       background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.15); color: var(--text2, #aaa);
     }
     .cl-modal-btn--close:hover { opacity: 0.8; }
+    .cl-modal-upload-banner {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 10px 20px; background: rgba(255,183,0,0.08);
+      border-bottom: 1px solid rgba(255,183,0,0.2); font-size: 12px; color: rgba(255,183,0,0.9);
+    }
+    .cl-modal-btn--resumir-manual {
+      background: rgba(138,43,226,0.15); border: 1px solid rgba(138,43,226,0.35);
+      color: rgba(138,43,226,0.95); white-space: nowrap; margin-left: auto;
+    }
+    .cl-modal-btn--resumir-manual:hover { opacity: 0.8; }
     .cl-modal-body {
       padding: 20px 24px; overflow-y: auto; font-size: 14px; line-height: 1.7;
       color: var(--text, #e0e0e0);

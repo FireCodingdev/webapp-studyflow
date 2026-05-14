@@ -167,14 +167,14 @@ exports.geminiProxy = onRequest(
 
     // ── Modo de resumo de publicações do Classroom ────────────────────────────
     if (mode === 'summarize') {
-      const { text, driveFileId, classroomAccessToken } = req.body;
-      if (!text && !driveFileId) return res.status(400).json({ error: 'text ou driveFileId são obrigatórios para mode=summarize' });
+      const { text, driveFileId, classroomAccessToken, fileBase64: uploadedBase64, fileMimeType: uploadedMimeType } = req.body;
+      if (!text && !driveFileId && !uploadedBase64) return res.status(400).json({ error: 'text, driveFileId ou fileBase64 são obrigatórios para mode=summarize' });
 
-      // Baixa o arquivo Drive no servidor (evita CORS e limite de payload do browser)
-      let fileBase64 = null;
-      let fileMimeType = null;
+      // Arquivo enviado diretamente pelo browser (upload manual) tem prioridade
+      let fileBase64 = uploadedBase64 || null;
+      let fileMimeType = uploadedMimeType || null;
 
-      if (driveFileId && classroomAccessToken) {
+      if (!fileBase64 && driveFileId && classroomAccessToken) {
         try {
           // 1. Tenta exportar como PDF (Google Docs, Slides, Sheets)
           const exportRes = await fetch(

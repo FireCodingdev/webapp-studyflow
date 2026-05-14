@@ -2466,25 +2466,21 @@ async function _renderClassroomSettingsSection(uid) {
 
   window._accsClassroomConnect = function() {
     window._conectarClassroom?.();
-    // Re-renderiza o painel quando o OAuth retornar (mensagem do popup)
-    function onOAuthDone(e) {
-      if (e.origin !== location.origin) return;
-      if (e.data?.type !== 'classroom-code') return;
-      window.removeEventListener('message', onOAuthDone);
-      setTimeout(() => _renderClassroomSettingsSection(uid), 1500);
+    // Re-renderiza após classroom.js confirmar que o token foi salvo no Firestore
+    function onConnected() {
+      window.removeEventListener('classroom-connected', onConnected);
+      _renderClassroomSettingsSection(uid);
     }
-    window.addEventListener('message', onOAuthDone);
+    window.addEventListener('classroom-connected', onConnected);
   };
 
   window._accsClassroomReconnect = function() {
     window._conectarClassroom?.();
-    function onOAuthDone(e) {
-      if (e.origin !== location.origin) return;
-      if (e.data?.type !== 'classroom-code') return;
-      window.removeEventListener('message', onOAuthDone);
-      setTimeout(() => _renderClassroomSettingsSection(uid), 1500);
+    function onConnected() {
+      window.removeEventListener('classroom-connected', onConnected);
+      _renderClassroomSettingsSection(uid);
     }
-    window.addEventListener('message', onOAuthDone);
+    window.addEventListener('classroom-connected', onConnected);
   };
 
   window._accsClassroomSync = async function() {
