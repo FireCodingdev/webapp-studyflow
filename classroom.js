@@ -537,14 +537,11 @@ function encontrarCorTurma(nomeTurma) {
 }
 
 function renderPostCard(post) {
-  // courseWorkMaterials usa updateTime; announcements usa updateTime também,
-  // mas tem creationTime como fallback.
   const dataISO = post.updateTime || post.creationTime || null;
   const data = dataISO
     ? new Date(dataISO).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
     : '';
 
-  // Badge visual por tipo de publicação
   const isMaterial = post._tipo === 'material';
   const badgeIcon  = isMaterial ? '📎' : '📢';
   const badgeLabel = isMaterial ? 'Novo material' : 'Aviso';
@@ -560,7 +557,6 @@ function renderPostCard(post) {
     })
     .filter(Boolean);
 
-  // Para materiais, o campo text foi normalizado para description/title; para avisos usa text diretamente.
   const textoRaw = post.text || '';
   const texto = textoRaw
     ? `<p class="cl-post-text">${esc(textoRaw.slice(0, 200))}${textoRaw.length > 200 ? '…' : ''}</p>`
@@ -573,10 +569,12 @@ function renderPostCard(post) {
         </a>`).join('')}</div>`
     : '';
 
-  // Para materiais sem descrição, mostra o título como texto principal
   const tituloHtml = (isMaterial && !textoRaw && post.title)
     ? `<p class="cl-post-text cl-post-title-material">${esc(post.title)}</p>`
     : '';
+
+  // Serializa o post para passar ao handler de forma segura
+  const postJson = esc(JSON.stringify(post));
 
   return `
     <div class="cl-post-card cl-post-card--${post._tipo}">
@@ -585,10 +583,189 @@ function renderPostCard(post) {
           <span class="cl-badge ${badgeClass}">${badgeIcon} ${badgeLabel}</span>
           <span class="cl-post-turma" style="color:${post._corTurma}">${esc(post._nomeTurma)}</span>
         </div>
-        <span class="cl-post-data">${data}</span>
+        <div class="cl-post-card-top-right">
+          <span class="cl-post-data">${data}</span>
+          <button class="cl-resumir-btn" title="Resumir com IA" onclick="window._resumirPostClassroom(this)" data-post="${postJson}">✨ Resumir</button>
+        </div>
       </div>
       ${tituloHtml}${texto}${linksHtml}
     </div>`;
+}
+
+// ─── IA: RESUMIR PUBLICAÇÃO ────────────────────────────────────────────────────
+const GEMINI_PROXY = 'https://geminiproxy-xesxvi757a-uc.a.run.app';
+
+window._resumirPostClassroom = async function(btn) {
+  const post = JSON.parse(btn.dataset.post.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"'));
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Analisando...';
+
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) throw new Error('Faça login primeiro.');
+
+    const [idToken, classroomToken] = await Promise.all([
+      auth.currentUser.getIdToken(),
+      getTokenValido(uid),
+    ]);
+
+    // Monta texto descritivo do post
+    let textoPrincipal = '';
+    if (post.title)        textoPrincipal += `Título: ${post.title}\n`;
+    if (post.text)         textoPrincipal += `\nDescrição:\n${post.text}\n`;
+    if (post._nomeTurma)   textoPrincipal += `\nTurma: ${post._nomeTurma}\n`;
+
+    const nomesMateriais = (post.materials || []).map(m => {
+      if (m.driveFile)    return `[Arquivo Drive] ${m.driveFile.driveFile?.title || ''}`;
+      if (m.youtubeVideo) return `[YouTube] ${m.youtubeVideo.title || ''}`;
+      if (m.link)         return `[Link] ${m.link.title || m.link.url || ''}`;
+      if (m.form)         return `[Formulário] ${m.form.title || ''}`;
+      return null;
+    }).filter(Boolean);
+    if (nomesMateriais.length) textoPrincipal += `\nMateriais anexados:\n${nomesMateriais.join('\n')}\n`;
+
+    // Tenta buscar conteúdo de arquivos Drive (primeiro arquivo de cada post)
+    let fileBase64 = null;
+    let fileMimeType = null;
+
+    if (classroomToken) {
+      const driveMatl = (post.materials || []).find(m => m.driveFile?.driveFile?.id);
+      if (driveMatl) {
+        const fileId = driveMatl.driveFile.driveFile.id;
+        try {
+          // Tenta exportar como PDF (Docs/Slides/Sheets)
+          const exportRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=application/pdf`,
+            { headers: { Authorization: `Bearer ${classroomToken}` } }
+          );
+          if (exportRes.ok) {
+            const buf = await exportRes.arrayBuffer();
+            const bytes = new Uint8Array(buf);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+            fileBase64 = btoa(binary);
+            fileMimeType = 'application/pdf';
+          } else {
+            // Fallback: tenta download direto (PDF nativo, imagens etc.)
+            const dlRes = await fetch(
+              `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+              { headers: { Authorization: `Bearer ${classroomToken}` } }
+            );
+            if (dlRes.ok) {
+              const ct = dlRes.headers.get('content-type') || 'application/octet-stream';
+              const supportedTypes = ['application/pdf','image/png','image/jpeg','image/webp','image/gif'];
+              if (supportedTypes.some(t => ct.includes(t))) {
+                const buf2 = await dlRes.arrayBuffer();
+                const bytes2 = new Uint8Array(buf2);
+                let bin2 = '';
+                for (let i = 0; i < bytes2.byteLength; i++) bin2 += String.fromCharCode(bytes2[i]);
+                fileBase64 = btoa(bin2);
+                fileMimeType = ct.split(';')[0].trim();
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[Resumir] Não foi possível baixar arquivo Drive:', e);
+        }
+      }
+    }
+
+    if (!textoPrincipal.trim() && !fileBase64) {
+      throw new Error('Esta publicação não tem conteúdo para resumir.');
+    }
+
+    const body = { mode: 'summarize', text: textoPrincipal };
+    if (fileBase64)   body.fileBase64   = fileBase64;
+    if (fileMimeType) body.fileMimeType = fileMimeType;
+
+    const resp = await fetch(GEMINI_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || `Erro ${resp.status}`);
+    }
+
+    const { resumo } = await resp.json();
+    _mostrarModalResumo(post.title || post.text || 'Publicação', resumo);
+
+  } catch (err) {
+    alert('Não foi possível resumir: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✨ Resumir';
+  }
+};
+
+function _mostrarModalResumo(titulo, markdown) {
+  document.getElementById('cl-resumo-modal')?.remove();
+
+  const html = _markdownParaHtml(markdown);
+
+  const overlay = document.createElement('div');
+  overlay.id = 'cl-resumo-modal';
+  overlay.className = 'cl-modal-overlay';
+  overlay.innerHTML = `
+    <div class="cl-modal-box">
+      <div class="cl-modal-header">
+        <div class="cl-modal-title">
+          <span class="cl-modal-icon">✨</span>
+          <div>
+            <div class="cl-modal-label">Resumo com IA</div>
+            <div class="cl-modal-subtitle">${esc(titulo.slice(0, 80))}${titulo.length > 80 ? '…' : ''}</div>
+          </div>
+        </div>
+        <div class="cl-modal-actions">
+          <button class="cl-modal-btn cl-modal-btn--download" id="cl-modal-download">⬇️ Baixar</button>
+          <button class="cl-modal-btn cl-modal-btn--close" id="cl-modal-close">✕</button>
+        </div>
+      </div>
+      <div class="cl-modal-body" id="cl-modal-content">${html}</div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('cl-modal-close').addEventListener('click', () => overlay.remove());
+  document.getElementById('cl-modal-download').addEventListener('click', () => {
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `resumo-${titulo.slice(0, 40).replace(/[^a-z0-9]/gi, '_')}.md`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+}
+
+function _markdownParaHtml(md) {
+  // Process line by line to avoid paragraph-wrapping already-tagged lines
+  const lines = md
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    .split('\n');
+
+  const out = [];
+  let inList = false;
+
+  for (const raw of lines) {
+    let line = raw;
+    if (/^### /.test(line))        { if (inList) { out.push('</ul>'); inList = false; } out.push(line.replace(/^### (.+)/, '<h3>$1</h3>')); continue; }
+    if (/^## /.test(line))         { if (inList) { out.push('</ul>'); inList = false; } out.push(line.replace(/^## (.+)/, '<h2>$1</h2>')); continue; }
+    if (/^# /.test(line))          { if (inList) { out.push('</ul>'); inList = false; } out.push(line.replace(/^# (.+)/, '<h1>$1</h1>')); continue; }
+    if (/^---+$/.test(line.trim())) { if (inList) { out.push('</ul>'); inList = false; } out.push('<hr>'); continue; }
+    if (/^[-*] /.test(line))       { if (!inList) { out.push('<ul>'); inList = true; } out.push(line.replace(/^[-*] (.+)/, '<li>$1</li>')); continue; }
+    if (inList)                    { out.push('</ul>'); inList = false; }
+    if (line.trim() === '')        { out.push(''); continue; }
+    out.push(`<p>${line}</p>`);
+  }
+  if (inList) out.push('</ul>');
+  return out.join('\n');
 }
 
 function esc(str) {
@@ -618,6 +795,7 @@ function esc(str) {
     .cl-badge--aviso    { background: rgba(251,188,4,0.12);  color: rgba(180,130,0,0.95); }
     .cl-post-turma { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
     .cl-post-data { font-size: 11px; color: var(--text2); white-space: nowrap; }
+    .cl-post-card-top-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     .cl-post-text { font-size: 13px; color: var(--text); line-height: 1.5; margin: 0 0 8px; white-space: pre-wrap; }
     .cl-post-title-material { font-weight: 600; }
     .cl-post-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
@@ -628,6 +806,63 @@ function esc(str) {
       text-decoration: none; transition: background 0.15s;
     }
     .cl-post-link:hover { background: rgba(66,133,244,0.2); }
+    .cl-resumir-btn {
+      display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
+      background: rgba(138,43,226,0.1); border: 1px solid rgba(138,43,226,0.3);
+      border-radius: 20px; font-size: 11px; font-weight: 600; color: rgba(138,43,226,0.9);
+      cursor: pointer; transition: background 0.15s, transform 0.1s; white-space: nowrap;
+    }
+    .cl-resumir-btn:hover:not(:disabled) { background: rgba(138,43,226,0.2); transform: scale(1.03); }
+    .cl-resumir-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    /* Modal */
+    .cl-modal-overlay {
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .cl-modal-box {
+      background: var(--bg2, #1e1e2e); border: 1px solid var(--border, rgba(255,255,255,0.1));
+      border-radius: 16px; width: 100%; max-width: 680px; max-height: 85vh;
+      display: flex; flex-direction: column; overflow: hidden;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+    }
+    .cl-modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px; border-bottom: 1px solid var(--border, rgba(255,255,255,0.1));
+      gap: 12px; flex-shrink: 0;
+    }
+    .cl-modal-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .cl-modal-icon { font-size: 22px; flex-shrink: 0; }
+    .cl-modal-label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(138,43,226,0.9); }
+    .cl-modal-subtitle { font-size: 14px; font-weight: 600; color: var(--text, #e0e0e0); margin-top: 2px; }
+    .cl-modal-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .cl-modal-btn {
+      padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600;
+      cursor: pointer; border: 1px solid transparent; transition: opacity 0.15s;
+    }
+    .cl-modal-btn--download {
+      background: rgba(46,213,115,0.15); border-color: rgba(46,213,115,0.35); color: #2ed573;
+    }
+    .cl-modal-btn--download:hover { opacity: 0.8; }
+    .cl-modal-btn--close {
+      background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.15); color: var(--text2, #aaa);
+    }
+    .cl-modal-btn--close:hover { opacity: 0.8; }
+    .cl-modal-body {
+      padding: 20px 24px; overflow-y: auto; font-size: 14px; line-height: 1.7;
+      color: var(--text, #e0e0e0);
+    }
+    .cl-modal-body h1, .cl-modal-body h2, .cl-modal-body h3 {
+      color: var(--text, #e0e0e0); margin: 16px 0 8px; font-weight: 700;
+    }
+    .cl-modal-body h1 { font-size: 18px; border-bottom: 1px solid var(--border, rgba(255,255,255,0.1)); padding-bottom: 6px; }
+    .cl-modal-body h2 { font-size: 16px; }
+    .cl-modal-body h3 { font-size: 14px; }
+    .cl-modal-body ul { padding-left: 20px; margin: 8px 0; }
+    .cl-modal-body li { margin-bottom: 4px; }
+    .cl-modal-body p { margin: 8px 0; }
+    .cl-modal-body code { background: rgba(255,255,255,0.08); border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+    .cl-modal-body strong { font-weight: 700; color: var(--text, #e0e0e0); }
   `;
   document.head.appendChild(s);
 })();

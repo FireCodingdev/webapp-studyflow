@@ -165,6 +165,56 @@ exports.geminiProxy = onRequest(
 
     const { imageBase64, mimeType, mode = 'schedule' } = req.body;
 
+    // ── Modo de resumo de publicações do Classroom ────────────────────────────
+    if (mode === 'summarize') {
+      const { text, fileBase64, fileMimeType } = req.body;
+      if (!text) return res.status(400).json({ error: 'text é obrigatório para mode=summarize' });
+
+      const SUMMARIZE_PROMPT = `Você é um assistente acadêmico universitário. Analise o conteúdo abaixo (publicação do Google Classroom) e produza um relatório completo em português brasileiro usando markdown.
+
+Estruture SEMPRE assim (use os títulos exatos):
+
+## Resumo
+O que foi publicado — explique com suas próprias palavras (2–3 parágrafos).
+
+## Pontos Principais
+- Liste os conceitos, tópicos ou informações mais importantes em bullet points.
+
+## Exercícios e Questões
+Se houver exercícios, atividades ou perguntas no material, resolva cada um passo a passo com a resposta completa. Se não houver, escreva "Nenhum exercício encontrado neste material."
+
+## Dicas de Estudo
+Sugira 3–4 dicas práticas de como estudar este conteúdo.
+
+---
+CONTEÚDO DA PUBLICAÇÃO:
+`;
+
+      const parts = [{ text: SUMMARIZE_PROMPT + text }];
+      if (fileBase64 && fileMimeType) {
+        parts.push({ inlineData: { mimeType: fileMimeType, data: fileBase64 } });
+        parts[0].text += '\n\n(O arquivo anexo também foi enviado para análise — priorize seu conteúdo.)';
+      }
+
+      try {
+        const apiKey  = geminiKey.value();
+        const apiResp = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts }],
+            generationConfig: { temperature: 0.4, maxOutputTokens: 4096 },
+          }),
+        });
+        const result  = await apiResp.json();
+        const resumo  = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (!resumo) return res.status(500).json({ error: 'IA não retornou conteúdo. Tente novamente.' });
+        return res.status(200).json({ resumo });
+      } catch (err) {
+        return res.status(502).json({ error: `Erro ao chamar Gemini: ${err.message}` });
+      }
+    }
+
     if (!imageBase64 || !mimeType) {
       return res.status(400).json({ error: 'imageBase64 e mimeType são obrigatórios' });
     }
