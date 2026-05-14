@@ -807,35 +807,44 @@ function renderDashboard() {
   // ── Foco do dia ────────────────────────────────────────
   const focusEl = document.getElementById('db-focus-block');
   if (focusEl) {
-    const nextCls = todayClasses.find(c => {
-      const [sh, sm] = c.start.split(':').map(Number);
-      return sh * 60 + sm > nowMin;
-    });
     const liveCls = todayClasses.find(c => {
       const [sh,sm] = c.start.split(':').map(Number);
       const [eh,em] = c.end.split(':').map(Number);
       return nowMin >= sh*60+sm && nowMin < eh*60+em;
     });
-    const targetCls = liveCls || nextCls;
+    const nextCls = todayClasses.find(c => {
+      const [sh, sm] = c.start.split(':').map(Number);
+      return sh * 60 + sm > nowMin;
+    });
+    const justEndedCls = !liveCls && [...todayClasses].reverse().find(c => {
+      const [eh,em] = c.end.split(':').map(Number);
+      const endMin = eh*60+em;
+      return nowMin >= endMin && nowMin - endMin <= 30;
+    });
+
+    const targetCls = liveCls || justEndedCls || nextCls;
     if (targetCls) {
       const [sh,sm] = targetCls.start.split(':').map(Number);
       const [eh,em] = targetCls.end.split(':').map(Number);
       const startMin = sh*60+sm, endMin = eh*60+em;
-      const isLive = !!liveCls;
-      const minsLeft = isLive ? endMin - nowMin : startMin - nowMin;
+      const isLive    = !!liveCls && targetCls === liveCls;
+      const isEnded   = !!justEndedCls && targetCls === justEndedCls;
+      const minsLeft  = isLive ? endMin - nowMin : isEnded ? 0 : startMin - nowMin;
       const hLeft = Math.floor(minsLeft/60), mLeft = minsLeft%60;
-      const timeLabel = isLive
-        ? `Termina em ${hLeft>0?hLeft+'h ':''}${mLeft}min`
-        : `Começa em ${hLeft>0?hLeft+'h ':''}${mLeft}min`;
+      const timeLabel = isLive  ? `Termina em ${hLeft>0?hLeft+'h ':''}${mLeft}min`
+                      : isEnded ? `${targetCls.start} – ${targetCls.end}`
+                      : `Começa em ${hLeft>0?hLeft+'h ':''}${mLeft}min`;
       const prog = isLive ? Math.round(((nowMin-startMin)/(endMin-startMin))*100) : 0;
+      const badgeClass = isLive ? 'live' : isEnded ? 'ended' : 'next';
+      const badgeText  = isLive ? 'Em andamento...' : isEnded ? 'Terminou!' : 'PRÓXIMA';
       focusEl.innerHTML = `
         <div class="db-focus-card" style="border-left:3px solid ${getSubjectColor(targetCls.subjectId, targetCls.subjectName, targetCls.subjectColor)}">
-          <div class="db-focus-badge ${isLive?'live':'next'}">${isLive?'AO VIVO':'PRÓXIMA'}</div>
+          <div class="db-focus-badge ${badgeClass}">${badgeText}</div>
           <div class="db-focus-name">${targetCls.subjectName}</div>
           <div class="db-focus-meta">
             <span>${targetCls.start} – ${targetCls.end}</span>
             ${targetCls.room ? `<span>· ${targetCls.room}</span>` : ''}
-            <span class="db-focus-time">· ${timeLabel}</span>
+            ${!isEnded ? `<span class="db-focus-time">· ${timeLabel}</span>` : ''}
           </div>
           ${isLive ? `<div class="db-focus-bar"><div class="db-focus-fill" style="width:${prog}%;background:${getSubjectColor(targetCls.subjectId, targetCls.subjectName, targetCls.subjectColor)}"></div></div>` : ''}
         </div>`;
@@ -1107,9 +1116,10 @@ function renderClassCard(cls, nowMinArg, selArg, todayArg) {
     ? `${Math.floor(dur / 60)}h${dur % 60 > 0 ? (dur % 60) + 'min' : ''}`
     : `${dur}min`;
 
-  const isLive   = sel === todayDow && nowMin >= startMin && nowMin < endMin;
-  const progress = isLive ? Math.round(((nowMin - startMin) / dur) * 100) : null;
-  const clsColor = getSubjectColor(cls.subjectId, cls.subjectName, cls.subjectColor);
+  const isLive    = sel === todayDow && nowMin >= startMin && nowMin < endMin;
+  const isEnded   = sel === todayDow && nowMin >= endMin && nowMin - endMin <= 30;
+  const progress  = isLive ? Math.round(((nowMin - startMin) / dur) * 100) : null;
+  const clsColor  = getSubjectColor(cls.subjectId, cls.subjectName, cls.subjectColor);
 
   return `
     <div class="cls-card ${isLive ? 'cls-card--live' : ''}">
@@ -1117,7 +1127,8 @@ function renderClassCard(cls, nowMinArg, selArg, todayArg) {
       <div class="cls-card-body">
         <div class="cls-card-row">
           <span class="cls-card-name">${cls.subjectName}</span>
-          ${isLive ? '<span class="cls-live-chip">AO VIVO</span>' : ''}
+          ${isLive  ? '<span class="cls-live-chip">Em andamento...</span>' : ''}
+          ${isEnded ? '<span class="cls-live-chip cls-live-chip--ended">Terminou!</span>' : ''}
         </div>
         <div class="cls-card-meta">
           <span class="cls-meta">

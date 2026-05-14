@@ -593,14 +593,16 @@ function scrapeAll(homeHtml, notasHtml, horarioHtml, calendarioHtml, matricula) 
   const cursoMatch = homeHtml.match(/id=["']dadosAluno["'][\s\S]*?([A-Z][A-Za-zÀ-ɏ\s]{5,60})\s*-\s*(?:Noturno|Diurno|Matutino|Vespertino)/i);
   const curso = cursoMatch ? cleanText(cursoMatch[1]) : '';
 
-  // Período/Grade: "Grade - 20191"
-  const gradeMatch = homeHtml.match(/Grade\s*-\s*(\d{4,6})/i);
-  const periodo = gradeMatch ? gradeMatch[1] : '';
-
   const materias  = extractMaterias(notasHtml || homeHtml);
   const notas     = extractNotas(notasHtml || homeHtml);
   const horarios  = extractHorarios(horarioHtml || homeHtml);
   const calendario = extractCalendario(calendarioHtml || '');
+
+  // Período do aluno: usa o valor da coluna "Período" da primeira nota (ex: "2°")
+  // Fallback: código de grade do HTML da home (ex: "20191")
+  const periodoNota = notas[0]?.periodo || '';
+  const gradeMatch  = homeHtml.match(/Grade\s*-\s*(\d{4,6})/i);
+  const periodo     = periodoNota || (gradeMatch ? gradeMatch[1] : '');
 
   return {
     nome:     cleanText(nome),

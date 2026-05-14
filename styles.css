@@ -1295,6 +1295,12 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid rgba(46,213,115,0.3);
   animation: live-blink 2s ease-in-out infinite;
 }
+.cls-live-chip--ended {
+  background: rgba(224,82,82,0.15);
+  color: #e05252;
+  border-color: rgba(224,82,82,0.3);
+  animation: none;
+}
 @keyframes live-blink {
   0%,100% { opacity: 1; }
   50%      { opacity: 0.55; }
@@ -1408,8 +1414,9 @@ a { color: inherit; text-decoration: none; }
   border-radius: 6px;
   width: fit-content;
 }
-.db-focus-badge.live { background: rgba(255,80,80,0.15); color: #ff5050; }
-.db-focus-badge.next { background: var(--accent-soft); color: var(--accent); }
+.db-focus-badge.live  { background: rgba(46,213,115,0.15); color: #2ed573; }
+.db-focus-badge.ended { background: rgba(224,82,82,0.15);  color: #e05252; }
+.db-focus-badge.next  { background: var(--accent-soft); color: var(--accent); }
 .db-focus-name { font-size: 16px; font-weight: 700; color: var(--text); }
 .db-focus-meta { font-size: 12px; color: var(--text2); display: flex; gap: 6px; flex-wrap: wrap; }
 .db-focus-time { color: var(--accent); font-weight: 600; }
@@ -1970,7 +1977,6 @@ a { color: inherit; text-decoration: none; }
   color: rgba(124, 111, 255, 0.9);
 }
 
-[data-theme="dark"] .db-focus-badge.live,
 [data-theme="dark"] .db-exam-urgent,
 [data-theme="dark"] .db-exam-soon {
   background: rgba(124, 111, 255, 0.1);
