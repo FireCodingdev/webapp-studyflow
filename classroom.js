@@ -576,8 +576,19 @@ function renderPostCard(post) {
     ? `<p class="cl-post-text cl-post-title-material">${esc(post.title)}</p>`
     : '';
 
-  // Serializa o post para passar ao handler de forma segura
-  const postJson = esc(JSON.stringify(post));
+  // Extrai dados do Drive antecipadamente (evita serializar o post inteiro)
+  const driveMatl    = (post.materials || []).find(m => m.driveFile?.driveFile?.id);
+  const driveFileId  = driveMatl?.driveFile?.driveFile?.id  || '';
+  const driveAltLink = driveMatl?.driveFile?.driveFile?.alternateLink || '';
+  const driveTitle   = driveMatl?.driveFile?.driveFile?.title || '';
+
+  const nomesMateriais = (post.materials || []).map(m => {
+    if (m.driveFile)    return `[Arquivo Drive] ${m.driveFile.driveFile?.title || ''}`;
+    if (m.youtubeVideo) return `[YouTube] ${m.youtubeVideo.title || ''}`;
+    if (m.link)         return `[Link] ${m.link.title || m.link.url || ''}`;
+    if (m.form)         return `[Formulário] ${m.form.title || ''}`;
+    return null;
+  }).filter(Boolean).join('\n');
 
   return `
     <div class="cl-post-card cl-post-card--${post._tipo}">
@@ -588,7 +599,14 @@ function renderPostCard(post) {
         </div>
         <div class="cl-post-card-top-right">
           <span class="cl-post-data">${data}</span>
-          <button class="cl-resumir-btn" title="Resumir com IA" onclick="window._resumirPostClassroom(this)" data-post="${postJson}">✨ Resumir</button>
+          <button class="cl-resumir-btn" title="Resumir com IA" onclick="window._resumirPostClassroom(this)"
+            data-title="${esc(post.title || '')}"
+            data-text="${esc(textoRaw)}"
+            data-turma="${esc(post._nomeTurma || '')}"
+            data-materiais="${esc(nomesMateriais)}"
+            data-drive-id="${esc(driveFileId)}"
+            data-drive-link="${esc(driveAltLink)}"
+            data-drive-title="${esc(driveTitle)}">✨ Resumir</button>
         </div>
       </div>
       ${tituloHtml}${texto}${linksHtml}
@@ -599,7 +617,16 @@ function renderPostCard(post) {
 const GEMINI_PROXY = 'https://geminiproxy-xesxvi757a-uc.a.run.app';
 
 window._resumirPostClassroom = async function(btn) {
-  const post = JSON.parse(btn.dataset.post.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"'));
+  // Lê dados dos atributos individuais (mais robusto que JSON do post inteiro)
+  const titulo       = btn.dataset.title    || btn.dataset.text || 'Publicação';
+  const driveFileId  = btn.dataset.driveId  || null;
+  const driveAltLink = btn.dataset.driveLink || null;
+
+  let textoPrincipal = '';
+  if (btn.dataset.title)    textoPrincipal += `Título: ${btn.dataset.title}\n`;
+  if (btn.dataset.text)     textoPrincipal += `\nDescrição:\n${btn.dataset.text}\n`;
+  if (btn.dataset.turma)    textoPrincipal += `\nTurma: ${btn.dataset.turma}\n`;
+  if (btn.dataset.materiais) textoPrincipal += `\nMateriais anexados:\n${btn.dataset.materiais}\n`;
 
   btn.disabled = true;
   btn.textContent = '⏳ Lendo material...';
@@ -617,31 +644,10 @@ window._resumirPostClassroom = async function(btn) {
       getTokenValido(uid),
     ]);
 
-    // Monta contexto textual do post
-    let textoPrincipal = '';
-    if (post.title)      textoPrincipal += `Título: ${post.title}\n`;
-    if (post.text)       textoPrincipal += `\nDescrição:\n${post.text}\n`;
-    if (post._nomeTurma) textoPrincipal += `\nTurma: ${post._nomeTurma}\n`;
-
-    const nomesMateriais = (post.materials || []).map(m => {
-      if (m.driveFile)    return `[Arquivo Drive] ${m.driveFile.driveFile?.title || ''}`;
-      if (m.youtubeVideo) return `[YouTube] ${m.youtubeVideo.title || ''}`;
-      if (m.link)         return `[Link] ${m.link.title || m.link.url || ''}`;
-      if (m.form)         return `[Formulário] ${m.form.title || ''}`;
-      return null;
-    }).filter(Boolean);
-    if (nomesMateriais.length) textoPrincipal += `\nMateriais anexados:\n${nomesMateriais.join('\n')}\n`;
-
-    // Pega ID e link do primeiro arquivo Drive para o servidor baixar
-    const driveMatl    = (post.materials || []).find(m => m.driveFile?.driveFile?.id);
-    const driveFileId  = driveMatl?.driveFile?.driveFile?.id || null;
-    const driveAltLink = driveMatl?.driveFile?.driveFile?.alternateLink || null;
-
     if (!textoPrincipal.trim() && !driveFileId) {
       throw new Error('Esta publicação não tem conteúdo para resumir.');
     }
 
-    // Envia ao servidor: ele tenta baixar o PDF do Drive e chama o Gemini
     const body = { mode: 'summarize', text: textoPrincipal };
     if (driveFileId && classroomToken) {
       body.driveFileId          = driveFileId;
@@ -660,7 +666,7 @@ window._resumirPostClassroom = async function(btn) {
     }
 
     const { resumo, usedFile } = await resp.json();
-    _mostrarModalResumo(post.title || post.text || 'Publicação', resumo, usedFile, driveFileId, driveAltLink, textoPrincipal, idToken);
+    _mostrarModalResumo(titulo, resumo, usedFile, driveFileId, driveAltLink, textoPrincipal, idToken);
 
   } catch (err) {
     alert('Não foi possível resumir: ' + err.message);
@@ -691,7 +697,8 @@ function _mostrarModalResumo(titulo, markdown, usedFile, driveFileId, driveAltLi
           </div>
         </div>
         <div class="cl-modal-actions">
-          <button class="cl-modal-btn cl-modal-btn--download" id="cl-modal-download">⬇️ Baixar resumo</button>
+          <button class="cl-modal-btn cl-modal-btn--save" id="cl-modal-save">🔖 Salvar</button>
+          <button class="cl-modal-btn cl-modal-btn--download" id="cl-modal-download">⬇️ Baixar</button>
           <button class="cl-modal-btn cl-modal-btn--close" id="cl-modal-close">✕</button>
         </div>
       </div>
@@ -713,6 +720,38 @@ function _mostrarModalResumo(titulo, markdown, usedFile, driveFileId, driveAltLi
 
   const contentEl = document.getElementById('cl-modal-content');
   if (contentEl) contentEl._mdSource = markdown;
+
+  // Salvar resumo na conta (Firestore)
+  document.getElementById('cl-modal-save').addEventListener('click', async () => {
+    const saveBtn = document.getElementById('cl-modal-save');
+    saveBtn.disabled = true;
+    saveBtn.textContent = '⏳ Salvando...';
+    try {
+      const uid = auth.currentUser?.uid;
+      if (!uid) throw new Error('login necessário');
+      const { doc: fsDoc, getDoc: fsGetDoc, updateDoc: fsUpdateDoc, setDoc: fsSetDoc } =
+        await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const { db } = await import('./firebase.js');
+      const ref   = fsDoc(db, 'users', uid);
+      const snap  = await fsGetDoc(ref);
+      const existing = snap.data()?.classroomSummaries || [];
+      const entry = {
+        titulo,
+        resumo: contentEl?._mdSource || markdown,
+        savedAt: new Date().toISOString(),
+      };
+      // Evita duplicatas pelo título
+      const filtered = existing.filter(s => s.titulo !== titulo);
+      await fsUpdateDoc(ref, { classroomSummaries: [...filtered, entry] });
+      saveBtn.textContent = '✅ Salvo!';
+      saveBtn.style.color = '#2ed573';
+      saveBtn.style.borderColor = 'rgba(46,213,115,0.4)';
+    } catch (err) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = '🔖 Salvar';
+      alert('Erro ao salvar: ' + err.message);
+    }
+  });
 
   document.getElementById('cl-modal-download').addEventListener('click', () => {
     const src  = contentEl?._mdSource || markdown;
@@ -895,6 +934,11 @@ function esc(str) {
       padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600;
       cursor: pointer; border: 1px solid transparent; transition: opacity 0.15s;
     }
+    .cl-modal-btn--save {
+      background: rgba(66,133,244,0.12); border-color: rgba(66,133,244,0.35); color: rgba(66,133,244,0.95);
+    }
+    .cl-modal-btn--save:hover:not(:disabled) { opacity: 0.8; }
+    .cl-modal-btn--save:disabled { cursor: default; }
     .cl-modal-btn--download {
       background: rgba(46,213,115,0.15); border-color: rgba(46,213,115,0.35); color: #2ed573;
     }
