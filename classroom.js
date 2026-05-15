@@ -454,17 +454,9 @@ function injetarEstilosClassroom() {
 
 // ─── POSTS DO CLASSROOM NA PÁGINA DE MATERIAIS ────────────────────────────────
 export async function renderPostsClassroom(token, targetEl, limit) {
-  let section = targetEl || null;
-  if (!section) {
-    section = document.getElementById('classroom-posts-section');
-    if (!section) {
-      const linksList = document.getElementById('links-list');
-      if (!linksList) return;
-      section = document.createElement('div');
-      section.id = 'classroom-posts-section';
-      linksList.insertAdjacentElement('afterend', section);
-    }
-  }
+  // Sempre requer um targetEl explícito — não injeta mais na página de Materiais
+  const section = targetEl;
+  if (!section) return;
 
   section.innerHTML = `
     <div class="cl-posts-header">

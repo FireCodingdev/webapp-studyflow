@@ -532,8 +532,6 @@ window.navigateTo = function(page) {
   if (page === 'flashcards') renderFlashcards();
   if (page === 'links') {
     renderLinks();
-    // Exibe posts do Classroom se o usuário já estiver conectado
-    window._renderPostsClassroom?.();
   }
   if (page === 'feed') window._renderFeed?.();
   if (page === 'social') window._renderSocialPage?.();
@@ -2484,9 +2482,7 @@ async function _renderClassroomSettingsSection(uid) {
   window._accsClassroomSync = async function() {
     const btn = document.getElementById('cl-settings-sync-btn');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Sincronizando...'; }
-    // Dispara sincronização via função exposta pelo classroom.js
-    await window._renderPostsClassroom?.();
-    // Reatualiza painel para mostrar nova data de sync
+    await window._renderPostsClassroomDashboard?.();
     await _renderClassroomSettingsSection(uid);
   };
 
