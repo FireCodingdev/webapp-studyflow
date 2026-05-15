@@ -3194,6 +3194,86 @@ textarea.accs-input {
 }
 .cl-subject-pick-btn--cancel:hover { background: rgba(255,71,87,0.08); color: #ff4757; }
 
+/* ── Due date e botão Responder nos cards ───────────────────────────── */
+.cl-post-due {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 700; color: #ffa502;
+  background: rgba(255,165,2,0.1); border: 1px solid rgba(255,165,2,0.25);
+  border-radius: 6px; padding: 3px 8px; margin: 4px 0 2px;
+}
+.cl-post-due-icon { font-size: 11px; }
+
+.cl-responder-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 8px; padding: 6px 13px; border-radius: 8px;
+  background: rgba(46,213,115,0.1); border: 1px solid rgba(46,213,115,0.3);
+  color: #2ed573; font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: background 0.15s;
+}
+.cl-responder-btn:hover { background: rgba(46,213,115,0.2); }
+
+/* ── Modal de resposta ──────────────────────────────────────────────── */
+.cl-resp-box { max-width: 560px; display: flex; flex-direction: column; gap: 12px; }
+
+.cl-resp-due {
+  font-size: 13px; color: #ffa502;
+  background: rgba(255,165,2,0.08); border: 1px solid rgba(255,165,2,0.2);
+  border-radius: 8px; padding: 6px 10px;
+}
+.cl-resp-desc {
+  font-size: 13px; color: var(--text2); line-height: 1.6;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px; white-space: pre-wrap;
+  max-height: 140px; overflow-y: auto;
+}
+.cl-resp-field { display: flex; flex-direction: column; gap: 6px; }
+.cl-resp-textarea {
+  width: 100%; min-height: 110px; resize: vertical;
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px; color: var(--text); font-size: 14px;
+  padding: 10px 12px; outline: none; font-family: inherit; line-height: 1.6;
+  transition: border-color 0.15s; box-sizing: border-box;
+}
+.cl-resp-textarea:focus { border-color: var(--accent); }
+.cl-resp-textarea:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.cl-resp-submit-btn {
+  flex: 2; padding: 10px 16px; border-radius: 9px;
+  background: rgba(46,213,115,0.15); border: 1px solid rgba(46,213,115,0.35);
+  color: #2ed573; font-size: 13px; font-weight: 700; cursor: pointer;
+  transition: background 0.15s;
+}
+.cl-resp-submit-btn:hover { background: rgba(46,213,115,0.25); }
+.cl-resp-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.cl-resp-save-btn {
+  flex: 1; padding: 10px 14px; border-radius: 9px;
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+  color: var(--text2); font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: background 0.15s;
+}
+.cl-resp-save-btn:hover { background: rgba(255,255,255,0.09); }
+
+.cl-resp-open-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 8px 14px; border-radius: 9px;
+  background: rgba(108,99,255,0.1); border: 1px solid rgba(108,99,255,0.3);
+  color: var(--accent); font-size: 13px; font-weight: 600;
+  text-decoration: none; transition: background 0.15s;
+}
+.cl-resp-open-btn:hover { background: rgba(108,99,255,0.2); }
+
+.cl-resp-status.delivered {
+  padding: 10px 14px; border-radius: 9px; font-size: 14px; font-weight: 700;
+  color: #2ed573; background: rgba(46,213,115,0.1); border: 1px solid rgba(46,213,115,0.25);
+  text-align: center;
+}
+.cl-resp-info {
+  font-size: 13px; color: var(--text2); line-height: 1.6;
+  margin-bottom: 8px;
+}
+.cl-resp-loading { font-size: 13px; color: var(--text2); padding: 10px 0; }
+
 /* ── Filter tabs ─────────────────────────────────────────────────────── */
 .filter-tabs {
   display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px;

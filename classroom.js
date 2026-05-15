@@ -15,7 +15,7 @@ import {
 const CLASSROOM_CLIENT_ID = '92968084905-1ete8rjlfs6e3uo3pj4h351bdm8ak947.apps.googleusercontent.com';
 const CLASSROOM_SCOPES = [
   'https://www.googleapis.com/auth/classroom.courses.readonly',
-  'https://www.googleapis.com/auth/classroom.coursework.me.readonly',
+  'https://www.googleapis.com/auth/classroom.coursework.me',       // leitura + entrega
   'https://www.googleapis.com/auth/classroom.announcements.readonly',
   'https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly',
   'https://www.googleapis.com/auth/drive.readonly',
@@ -566,6 +566,7 @@ async function buscarPostsDaTurma(curso, token) {
        _nomeTurma: nomeTurma,
        _corTurma:  cor,
        _tipo:      'atividade',
+       _courseId:  curso.id,       // garante o courseId correto
        title:      cw.title || '',
        text:       cw.description || '',
      }))
@@ -612,6 +613,15 @@ function limparNomeTurma(nomeTurma) {
     .trim();
 }
 
+function _formatDueDate(dueDate, dueTime) {
+  if (!dueDate?.year) return '';
+  const h = dueTime?.hours   ?? 23;
+  const m = dueTime?.minutes ?? 59;
+  const d = new Date(dueDate.year, dueDate.month - 1, dueDate.day, h, m);
+  const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+  return `${dateStr}, ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
 function renderPostCard(post) {
   const dataISO = post.updateTime || post.creationTime || null;
   const data = dataISO
@@ -622,6 +632,12 @@ function renderPostCard(post) {
   const badgeIcon  = tipo === 'material' ? '📎' : tipo === 'atividade' ? '📝' : '📢';
   const badgeLabel = tipo === 'material' ? 'Novo material' : tipo === 'atividade' ? 'Atividade' : 'Aviso';
   const badgeClass = tipo === 'material' ? 'cl-badge--material' : tipo === 'atividade' ? 'cl-badge--atividade' : 'cl-badge--aviso';
+
+  // Due date (apenas para atividades com dueDate definida)
+  const dueDateStr = tipo === 'atividade' ? _formatDueDate(post.dueDate, post.dueTime) : '';
+  const dueDateHtml = dueDateStr
+    ? `<div class="cl-post-due"><span class="cl-post-due-icon">⏰</span> Entrega: <strong>${dueDateStr}</strong></div>`
+    : '';
 
   const links = (post.materials || [])
     .map(m => {
@@ -663,6 +679,18 @@ function renderPostCard(post) {
     return null;
   }).filter(Boolean).join('\n');
 
+  const isAtividade = tipo === 'atividade';
+  const alternateLinkPost = post.alternateLink || '';
+  const responderBtn = isAtividade ? `
+    <button class="cl-responder-btn" onclick="window._abrirModalResponder(this)"
+      data-course-id="${esc(post._courseId || post.courseId || '')}"
+      data-cw-id="${esc(post.id || '')}"
+      data-worktype="${esc(post.workType || 'ASSIGNMENT')}"
+      data-title="${esc(post.title || '')}"
+      data-text="${esc(textoRaw)}"
+      data-due="${esc(dueDateStr)}"
+      data-link="${esc(alternateLinkPost)}">Responder →</button>` : '';
+
   return `
     <div class="cl-post-card cl-post-card--${post._tipo}">
       <div class="cl-post-card-top">
@@ -682,9 +710,145 @@ function renderPostCard(post) {
             data-drive-title="${esc(driveTitle)}">✨ Resumir</button>
         </div>
       </div>
+      ${dueDateHtml}
       ${tituloHtml}${texto}${linksHtml}
+      ${responderBtn}
     </div>`;
 }
+
+// ─── RESPONDER ATIVIDADE ──────────────────────────────────────────────────────
+window._abrirModalResponder = async function(btn) {
+  const courseId  = btn.dataset.courseId;
+  const cwId      = btn.dataset.cwId;
+  const workType  = btn.dataset.worktype || 'ASSIGNMENT';
+  const titulo    = btn.dataset.title || 'Atividade';
+  const descricao = btn.dataset.text  || '';
+  const due       = btn.dataset.due   || '';
+  const link      = btn.dataset.link  || '';
+
+  // Remove modal anterior se existir
+  document.getElementById('cl-resp-overlay')?.remove();
+
+  const isShortAnswer = workType === 'SHORT_ANSWER_QUESTION';
+  const overlay = document.createElement('div');
+  overlay.id = 'cl-resp-overlay';
+  overlay.className = 'cl-modal-overlay';
+  overlay.innerHTML = `
+    <div class="cl-modal-box cl-resp-box">
+      <div class="cl-modal-header">
+        <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+          <span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px">📝 Atividade</span>
+          <span style="font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(titulo)}</span>
+        </div>
+        <button onclick="document.getElementById('cl-resp-overlay').remove()" style="background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer;padding:4px;line-height:1">✕</button>
+      </div>
+      ${due ? `<div class="cl-resp-due">⏰ Entrega: <strong>${esc(due)}</strong></div>` : ''}
+      ${descricao ? `<div class="cl-resp-desc">${esc(descricao)}</div>` : ''}
+      <div id="cl-resp-body">
+        <div class="cl-resp-loading">⏳ Carregando sua resposta...</div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  const uid = auth.currentUser?.uid;
+  const token = uid ? await getTokenValido(uid) : null;
+
+  if (!token || !courseId || !cwId) {
+    document.getElementById('cl-resp-body').innerHTML = `
+      <p style="color:var(--text2);font-size:13px;margin-bottom:10px">Não foi possível carregar a submissão. Reconecte o Classroom.</p>
+      ${link ? `<a href="${esc(link)}" target="_blank" class="cl-resp-open-btn">🔗 Abrir no Classroom</a>` : ''}`;
+    return;
+  }
+
+  try {
+    // Busca a submissão existente do aluno
+    const subRes = await fetch(
+      `https://classroom.googleapis.com/v1/courses/${courseId}/courseWork/${cwId}/studentSubmissions?userId=me`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const subData = subRes.ok ? await subRes.json() : {};
+    const submission = (subData.studentSubmissions || [])[0] || null;
+    const subId      = submission?.id || null;
+    const state      = submission?.state || 'NEW';
+    const isTurnedIn = state === 'TURNED_IN' || state === 'RETURNED';
+    const existingAnswer = isShortAnswer
+      ? (submission?.shortAnswerSubmission?.answer || '')
+      : '';
+
+    const body = document.getElementById('cl-resp-body');
+
+    if (isShortAnswer) {
+      body.innerHTML = `
+        <div class="cl-resp-field">
+          <label style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.4px">Sua resposta</label>
+          <textarea id="cl-resp-textarea" class="cl-resp-textarea" placeholder="Digite sua resposta aqui..." ${isTurnedIn ? 'disabled' : ''}>${esc(existingAnswer)}</textarea>
+        </div>
+        ${isTurnedIn
+          ? `<div class="cl-resp-status delivered">✅ Entregue</div>`
+          : `<div style="display:flex;gap:8px;margin-top:4px">
+               <button id="cl-resp-submit" class="cl-resp-submit-btn" onclick="window._entregarResposta('${courseId}','${cwId}','${subId}',false)">📤 Entregar</button>
+               <button class="cl-resp-save-btn" onclick="window._entregarResposta('${courseId}','${cwId}','${subId}',true)">💾 Salvar rascunho</button>
+             </div>`}
+        ${link ? `<a href="${esc(link)}" target="_blank" class="cl-resp-open-btn" style="margin-top:6px">🔗 Ver no Classroom</a>` : ''}`;
+    } else {
+      // ASSIGNMENT — não suporta upload de arquivo via app
+      body.innerHTML = `
+        ${isTurnedIn
+          ? `<div class="cl-resp-status delivered">✅ Entregue</div>`
+          : `<p class="cl-resp-info">Este tipo de atividade pode exigir envio de arquivo. Use o Classroom para entregar anexos.</p>`}
+        ${link ? `<a href="${esc(link)}" target="_blank" class="cl-resp-open-btn">🔗 Abrir no Classroom para entregar</a>` : ''}`;
+    }
+  } catch(err) {
+    document.getElementById('cl-resp-body').innerHTML =
+      `<p style="color:#ff4757;font-size:13px">Erro ao carregar: ${err.message}</p>`;
+  }
+};
+
+window._entregarResposta = async function(courseId, cwId, subId, apenasRascunho) {
+  const textarea = document.getElementById('cl-resp-textarea');
+  const answer   = textarea?.value?.trim() || '';
+  const submitBtn = document.getElementById('cl-resp-submit');
+
+  if (!answer && !apenasRascunho) {
+    textarea?.setAttribute('style', 'border-color:#ff4757');
+    setTimeout(() => textarea?.removeAttribute('style'), 1500);
+    return;
+  }
+
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '⏳ Enviando...'; }
+
+  const uid = auth.currentUser?.uid;
+  const token = uid ? await getTokenValido(uid) : null;
+  if (!token) { if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📤 Entregar'; } return; }
+
+  try {
+    // Salva a resposta (PATCH)
+    if (subId && subId !== 'null') {
+      await fetch(
+        `https://classroom.googleapis.com/v1/courses/${courseId}/courseWork/${cwId}/studentSubmissions/${subId}?updateMask=shortAnswerSubmission`,
+        { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shortAnswerSubmission: { answer } }) }
+      );
+      // Entrega (turnIn) se não for só rascunho
+      if (!apenasRascunho) {
+        await fetch(
+          `https://classroom.googleapis.com/v1/courses/${courseId}/courseWork/${cwId}/studentSubmissions/${subId}:turnIn`,
+          { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: '{}' }
+        );
+        const body = document.getElementById('cl-resp-body');
+        if (body) body.innerHTML = `<div class="cl-resp-status delivered">✅ Atividade entregue com sucesso!</div>`;
+        return;
+      }
+    }
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📤 Entregar'; }
+    const saveBtn = document.querySelector('.cl-resp-save-btn');
+    if (saveBtn && apenasRascunho) { saveBtn.textContent = '✅ Salvo'; setTimeout(() => { saveBtn.textContent = '💾 Salvar rascunho'; }, 2000); }
+  } catch(err) {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📤 Entregar'; }
+    alert('Erro ao enviar: ' + err.message);
+  }
+};
 
 // ─── IA: RESUMIR PUBLICAÇÃO ────────────────────────────────────────────────────
 const GEMINI_PROXY = 'https://geminiproxy-xesxvi757a-uc.a.run.app';
