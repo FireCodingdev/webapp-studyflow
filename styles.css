@@ -2217,6 +2217,29 @@ body.sidebar-open {
 }
 .accs-save-btn:hover { opacity: 0.9; transform: translateY(-1px); }
 
+.accs-username-wrap {
+  display: flex; align-items: center;
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px; overflow: hidden; transition: border-color 0.15s;
+}
+.accs-username-wrap:focus-within { border-color: #6c63ff; }
+.accs-username-at {
+  padding: 0 10px; font-size: 15px; font-weight: 700;
+  color: var(--accent); background: rgba(108,99,255,0.1);
+  border-right: 1px solid rgba(255,255,255,0.08); line-height: 42px;
+  flex-shrink: 0;
+}
+.accs-username-wrap input {
+  background: transparent; border: none; padding: 10px 12px;
+  color: var(--text); font-size: 14px; font-weight: 500; flex: 1;
+  outline: none;
+}
+.accs-username-feedback {
+  font-size: 12px; min-height: 16px; transition: color 0.15s;
+}
+.accs-username-feedback.error { color: #ff4757; }
+.accs-username-feedback:not(.error) { color: #2ed573; }
+
 .accs-info-row {
   display: flex; justify-content: space-between; align-items: center;
   padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.07);

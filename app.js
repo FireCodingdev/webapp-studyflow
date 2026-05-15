@@ -292,11 +292,19 @@ async function initAppForUser(user) {
     avatarEl.innerHTML = `<img src="${cachedPhoto}" style="width:100%;height:100%;border-radius:50%;object-fit:cover" alt="avatar">`;
   }
 
-  // Salva perfil público para sistema de busca de destinatário (envio de cards)
+  // Sincroniza perfil público (carrega username do Firestore e salva nome)
   try {
-    const { setDoc: _setDoc, doc: _doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { setDoc: _setDoc, getDoc: _getDoc, doc: _doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const profileSnap = await _getDoc(_doc(db, 'user_profiles', user.uid));
+    if (profileSnap.exists()) {
+      const profileData = profileSnap.data();
+      if (profileData.username) localStorage.setItem('accs_username', profileData.username);
+      if (profileData.bio) localStorage.setItem('accs_bio', profileData.bio);
+    }
     await _setDoc(_doc(db, 'user_profiles', user.uid), {
-      uid: user.uid, email: user.email, displayName: name, updatedAt: new Date().toISOString(),
+      uid: user.uid, email: user.email, displayName: name,
+      username: localStorage.getItem('accs_username') || '',
+      updatedAt: new Date().toISOString(),
     }, { merge: true });
   } catch(_) {}
 
@@ -2354,7 +2362,8 @@ window.openAccountSettings = function() {
   const em = document.getElementById('accs-email-display');
   if (em) em.textContent = user.email || '';
   const ut = document.getElementById('accs-username-tag');
-  if (ut) ut.textContent = '@' + name.toLowerCase().replace(/\s+/g, '').slice(0,16);
+  const storedUser = localStorage.getItem('accs_username');
+  if (ut) ut.textContent = storedUser ? '@' + storedUser : '@' + name.toLowerCase().replace(/\s+/g, '').slice(0,16);
 
   // Garante que o sub-panel está SEMPRE fechado ao abrir as configurações
   const subPanel = document.getElementById('accs-sub-panel');
@@ -2447,10 +2456,22 @@ window.openAccsSection = function(section) {
   let body = '';
 
   if (section === 'account') {
+    const storedUsername = localStorage.getItem('accs_username') || '';
     body = `
       <div class="accs-field">
         <label>Nome de Exibição</label>
         <input id="accs-inp-name" type="text" value="${escapeHtml(name)}" placeholder="Seu nome">
+      </div>
+      <div class="accs-field">
+        <label>Nome de Usuário</label>
+        <div class="accs-username-wrap">
+          <span class="accs-username-at">@</span>
+          <input id="accs-inp-username" type="text" value="${escapeHtml(storedUsername)}"
+            placeholder="seu_usuario" maxlength="20"
+            oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9_]/g,'')">
+        </div>
+        <div id="accs-username-feedback" class="accs-username-feedback"></div>
+        <p style="font-size:11px;color:var(--text2);margin-top:4px">Letras minúsculas, números e _ (3–20 caracteres). Usado para encontrar sua conta na Comunidade.</p>
       </div>
       <div class="accs-field">
         <label>E-mail</label>
@@ -2751,22 +2772,69 @@ async function _renderClassroomSettingsSection(uid) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 window.saveAccsAccount = async function() {
-  const newName = document.getElementById('accs-inp-name')?.value?.trim();
-  const bio = document.getElementById('accs-inp-bio')?.value?.trim();
-  const user = STATE.currentUser;
+  const newName     = document.getElementById('accs-inp-name')?.value?.trim();
+  const newUsername = document.getElementById('accs-inp-username')?.value?.trim();
+  const bio         = document.getElementById('accs-inp-bio')?.value?.trim();
+  const feedback    = document.getElementById('accs-username-feedback');
+  const user        = STATE.currentUser;
   if (!user) return;
+
+  // Valida username
+  if (newUsername) {
+    if (newUsername.length < 3) {
+      if (feedback) { feedback.textContent = '❌ Mínimo 3 caracteres'; feedback.className = 'accs-username-feedback error'; }
+      return;
+    }
+    if (!/^[a-z0-9_]{3,20}$/.test(newUsername)) {
+      if (feedback) { feedback.textContent = '❌ Apenas letras minúsculas, números e _'; feedback.className = 'accs-username-feedback error'; }
+      return;
+    }
+    // Verifica unicidade no Firestore (só se mudou)
+    const currentUsername = localStorage.getItem('accs_username') || '';
+    if (newUsername !== currentUsername) {
+      if (feedback) { feedback.textContent = '⏳ Verificando disponibilidade...'; feedback.className = 'accs-username-feedback'; }
+      try {
+        const { collection, query, where, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+        const q = query(collection(db, 'user_profiles'), where('username', '==', newUsername));
+        const snap = await getDocs(q);
+        const taken = snap.docs.some(d => d.id !== user.uid);
+        if (taken) {
+          if (feedback) { feedback.textContent = '❌ @' + newUsername + ' já está em uso'; feedback.className = 'accs-username-feedback error'; }
+          return;
+        }
+      } catch(_) {}
+    }
+  }
+
   try {
     const { updateProfile } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+    const { setDoc, doc: _doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
     if (newName) await updateProfile(user, { displayName: newName });
     if (bio !== undefined) localStorage.setItem('accs_bio', bio);
-    // refresh sidebar
+    if (newUsername) localStorage.setItem('accs_username', newUsername);
+
+    // Salva perfil público no Firestore
+    await setDoc(_doc(db, 'user_profiles', user.uid), {
+      uid: user.uid,
+      email: user.email,
+      displayName: newName || user.displayName || '',
+      username: newUsername || localStorage.getItem('accs_username') || '',
+      bio: bio || '',
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    // Atualiza sidebar e header de configurações
     const name = newName || user.displayName || user.email.split('@')[0];
     const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2);
     const sidebarAvatar = document.getElementById('sidebar-avatar');
-    const sidebarName = document.getElementById('sidebar-name');
+    const sidebarName   = document.getElementById('sidebar-name');
     if (sidebarAvatar) sidebarAvatar.textContent = initials;
     if (sidebarName) sidebarName.textContent = name;
-    document.getElementById('accs-display-name').textContent = name;
+    const dn = document.getElementById('accs-display-name');
+    if (dn) dn.textContent = name;
+    const ut = document.getElementById('accs-username-tag');
+    if (ut && newUsername) ut.textContent = '@' + newUsername;
+
     showToast('✅ Perfil atualizado!');
     closeAccsSection();
   } catch(e) {
