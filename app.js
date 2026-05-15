@@ -542,10 +542,12 @@ window.navigateTo = function(page) {
 window.openSidebar = function() {
   document.getElementById('sidebar').classList.add('open');
   document.getElementById('sidebar-overlay').classList.add('active');
+  document.body.classList.add('sidebar-open');
 };
 window.closeSidebar = function() {
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebar-overlay').classList.remove('active');
+  document.body.classList.remove('sidebar-open');
 };
 
 function renderSidebar() {

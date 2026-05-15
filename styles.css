@@ -502,11 +502,17 @@ a { color: inherit; text-decoration: none; }
   pointer-events: none;
   transition: opacity 0.25s ease;
   z-index: 900;
+  touch-action: none;
 }
 
 .sidebar-overlay.active {
   opacity: 1;
   pointer-events: auto;
+}
+
+body.sidebar-open {
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .sidebar {
