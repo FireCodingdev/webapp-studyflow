@@ -540,14 +540,29 @@ async function buscarPostsDaTurma(curso, token) {
        ...m,
        _nomeTurma: curso.name,
        _corTurma:  cor,
-       _tipo:      'material',      // discriminator
-       // Normaliza campo de texto para reutilizar renderPostCard
+       _tipo:      'material',
        text:       m.description || m.title || '',
      }));
    }).catch(() => []);
 
-  const [avisos, materiais] = await Promise.all([fetchAnnouncements, fetchMaterials]);
-  return [...avisos, ...materiais];
+  // 3. Atividades postadas pelo professor (courseWork — aba "Atividades")
+  const fetchAtividades = fetch(
+    `https://classroom.googleapis.com/v1/courses/${curso.id}/courseWork?pageSize=15&orderBy=updateTime+desc`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  ).then(r => r.ok ? r.json() : { courseWork: [] })
+   .then(({ courseWork = [] }) =>
+     courseWork.map(cw => ({
+       ...cw,
+       _nomeTurma: curso.name,
+       _corTurma:  cor,
+       _tipo:      'atividade',
+       title:      cw.title || '',
+       text:       cw.description || '',
+     }))
+   ).catch(() => []);
+
+  const [avisos, materiais, atividades] = await Promise.all([fetchAnnouncements, fetchMaterials, fetchAtividades]);
+  return [...avisos, ...materiais, ...atividades];
 }
 
 function encontrarCorTurma(nomeTurma) {
@@ -563,10 +578,10 @@ function renderPostCard(post) {
     ? new Date(dataISO).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
     : '';
 
-  const isMaterial = post._tipo === 'material';
-  const badgeIcon  = isMaterial ? '📎' : '📢';
-  const badgeLabel = isMaterial ? 'Novo material' : 'Aviso';
-  const badgeClass = isMaterial ? 'cl-badge--material' : 'cl-badge--aviso';
+  const tipo = post._tipo;
+  const badgeIcon  = tipo === 'material' ? '📎' : tipo === 'atividade' ? '📝' : '📢';
+  const badgeLabel = tipo === 'material' ? 'Novo material' : tipo === 'atividade' ? 'Atividade' : 'Aviso';
+  const badgeClass = tipo === 'material' ? 'cl-badge--material' : tipo === 'atividade' ? 'cl-badge--atividade' : 'cl-badge--aviso';
 
   const links = (post.materials || [])
     .map(m => {
@@ -788,6 +803,15 @@ function _mostrarModalResumo(titulo, markdown, usedFile, driveFileId, driveAltLi
     if (!file) return;
 
     const banner = document.getElementById('cl-modal-upload-banner');
+
+    const MAX_BYTES = 15 * 1024 * 1024; // 15 MB
+    if (file.size > MAX_BYTES) {
+      if (banner) {
+        banner.innerHTML = '<span style="color:#ff4757;font-size:13px">❌ PDF muito grande (máx. 15 MB). Tente comprimir o arquivo antes de enviar.</span>';
+      }
+      return;
+    }
+
     if (banner) {
       banner.innerHTML = '<span style="color:var(--text2);font-size:12px">⏳ Lendo PDF e gerando resumo...</span>';
     }
@@ -920,8 +944,9 @@ function esc(str) {
     .cl-post-card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6px; gap: 8px; }
     .cl-post-card-top-left { display: flex; flex-direction: column; gap: 3px; }
     .cl-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; letter-spacing: 0.04em; text-transform: uppercase; }
-    .cl-badge--material { background: rgba(66,133,244,0.12); color: rgba(66,133,244,0.95); }
-    .cl-badge--aviso    { background: rgba(251,188,4,0.12);  color: rgba(180,130,0,0.95); }
+    .cl-badge--material  { background: rgba(66,133,244,0.12);  color: rgba(66,133,244,0.95); }
+    .cl-badge--aviso     { background: rgba(251,188,4,0.12);   color: rgba(180,130,0,0.95); }
+    .cl-badge--atividade { background: rgba(46,213,115,0.12);  color: rgba(30,160,80,0.95); }
     .cl-post-turma { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
     .cl-post-data { font-size: 11px; color: var(--text2); white-space: nowrap; }
     .cl-post-card-top-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }

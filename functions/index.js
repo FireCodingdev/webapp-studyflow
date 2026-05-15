@@ -226,6 +226,11 @@ Sugira 3–4 dicas práticas de como estudar este conteúdo.
 CONTEÚDO DA PUBLICAÇÃO:
 `;
 
+      // Rejeita arquivos grandes demais antes de bater na API
+      if (uploadedBase64 && uploadedBase64.length > 20_000_000) {
+        return res.status(413).json({ error: 'PDF muito grande para ser analisado. Tente um arquivo menor (máx. ~15 MB).' });
+      }
+
       const parts = [{ text: SUMMARIZE_PROMPT + (text || '') }];
       if (fileBase64 && fileMimeType) {
         parts.push({ inlineData: { mimeType: fileMimeType, data: fileBase64 } });
@@ -242,9 +247,21 @@ CONTEÚDO DA PUBLICAÇÃO:
             generationConfig: { temperature: 0.4, maxOutputTokens: 8192 },
           }),
         });
-        const result  = await apiResp.json();
-        const resumo  = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        if (!resumo) return res.status(500).json({ error: 'IA não retornou conteúdo. Tente novamente.' });
+        const result = await apiResp.json();
+        if (!apiResp.ok) {
+          const msg = result?.error?.message || `Gemini retornou status ${apiResp.status}`;
+          console.error('[summarize] Gemini API error:', msg);
+          if (apiResp.status === 400 && msg.includes('size')) {
+            return res.status(413).json({ error: 'PDF muito grande para a IA processar. Tente um arquivo menor.' });
+          }
+          return res.status(502).json({ error: `Erro na IA: ${msg}` });
+        }
+        const resumo = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (!resumo) {
+          const reason = result.candidates?.[0]?.finishReason || 'desconhecido';
+          console.error('[summarize] Gemini sem conteúdo, finishReason:', reason);
+          return res.status(500).json({ error: `IA não retornou conteúdo (${reason}). Tente novamente.` });
+        }
         const usedFile = !!fileBase64;
         return res.status(200).json({ resumo, usedFile });
       } catch (err) {
