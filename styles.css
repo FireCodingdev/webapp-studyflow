@@ -3237,31 +3237,47 @@ textarea.accs-input {
 .cl-resp-textarea:focus { border-color: var(--accent); }
 .cl-resp-textarea:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.cl-resp-submit-btn {
-  flex: 2; padding: 10px 16px; border-radius: 9px;
-  background: rgba(46,213,115,0.15); border: 1px solid rgba(46,213,115,0.35);
-  color: #2ed573; font-size: 13px; font-weight: 700; cursor: pointer;
-  transition: background 0.15s;
+.cl-resp-actions {
+  display: flex; gap: 8px; width: 100%;
 }
-.cl-resp-submit-btn:hover { background: rgba(46,213,115,0.25); }
-.cl-resp-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Botões do modal de resposta — base compartilhada */
+.cl-resp-submit-btn,
+.cl-resp-save-btn,
+.cl-resp-open-btn,
+.cl-resp-ai-btn {
+  flex: 1; padding: 11px 14px; border-radius: 10px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 6px; text-decoration: none; box-sizing: border-box;
+  white-space: nowrap;
+}
+.cl-resp-submit-btn {
+  background: rgba(46,213,115,0.15); border: 1px solid rgba(46,213,115,0.35);
+  color: #2ed573;
+}
+.cl-resp-submit-btn:hover  { background: rgba(46,213,115,0.25); }
+.cl-resp-submit-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .cl-resp-save-btn {
-  flex: 1; padding: 10px 14px; border-radius: 9px;
   background: rgba(255,255,255,0.05); border: 1px solid var(--border);
-  color: var(--text2); font-size: 13px; font-weight: 600; cursor: pointer;
-  transition: background 0.15s;
+  color: var(--text2);
 }
-.cl-resp-save-btn:hover { background: rgba(255,255,255,0.09); }
+.cl-resp-save-btn:hover { background: rgba(255,255,255,0.09); color: var(--text); }
 
 .cl-resp-open-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 8px 14px; border-radius: 9px;
   background: rgba(108,99,255,0.1); border: 1px solid rgba(108,99,255,0.3);
-  color: var(--accent); font-size: 13px; font-weight: 600;
-  text-decoration: none; transition: background 0.15s;
+  color: var(--accent); width: 100%;
 }
 .cl-resp-open-btn:hover { background: rgba(108,99,255,0.2); }
+
+.cl-resp-ai-btn {
+  background: rgba(255,165,0,0.1); border: 1px solid rgba(255,165,0,0.3);
+  color: #ffaa00;
+}
+.cl-resp-ai-btn:hover { background: rgba(255,165,0,0.2); }
+.cl-resp-ai-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .cl-resp-status.delivered {
   padding: 10px 14px; border-radius: 9px; font-size: 14px; font-weight: 700;

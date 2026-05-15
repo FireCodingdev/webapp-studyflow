@@ -269,6 +269,48 @@ CONTEÚDO DA PUBLICAÇÃO:
       }
     }
 
+    // ── Modo de resposta com IA ───────────────────────────────────────────────
+    if (mode === 'answer') {
+      const { titulo = '', descricao = '' } = req.body;
+      const ANSWER_PROMPT = `Você é um estudante universitário respondendo uma atividade do Google Classroom. Escreva uma resposta curta e natural, exatamente como um aluno digitaria.
+
+Regras obrigatórias:
+- Escreva em primeira pessoa, como um aluno real
+- Máximo 4 a 6 frases curtas, sem parágrafos longos
+- Sem bullet points, sem tópicos, sem markdown
+- Sem introduções formais como "Com base no exposto..." ou "Podemos concluir que..."
+- Linguagem simples e direta, como alguém digitando no celular
+- Responda especificamente à atividade, não de forma genérica
+- Português brasileiro natural
+
+Atividade: ${titulo}
+${descricao ? `Descrição: ${descricao}` : ''}
+
+Escreva apenas a resposta, sem nenhuma explicação extra:`;
+
+      try {
+        const apiKey = geminiKey.value();
+        const apiResp = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: ANSWER_PROMPT }] }],
+            generationConfig: { temperature: 0.8, maxOutputTokens: 512 },
+          }),
+        });
+        const result = await apiResp.json();
+        if (!apiResp.ok) {
+          const msg = result?.error?.message || `Gemini retornou status ${apiResp.status}`;
+          return res.status(502).json({ error: `Erro na IA: ${msg}` });
+        }
+        const resposta = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+        if (!resposta) return res.status(500).json({ error: 'IA não retornou conteúdo. Tente novamente.' });
+        return res.status(200).json({ resposta });
+      } catch (err) {
+        return res.status(502).json({ error: `Erro ao chamar Gemini: ${err.message}` });
+      }
+    }
+
     if (!imageBase64 || !mimeType) {
       return res.status(400).json({ error: 'imageBase64 e mimeType são obrigatórios' });
     }

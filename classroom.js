@@ -784,13 +784,14 @@ window._abrirModalResponder = async function(btn) {
           <label style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.4px">Sua resposta</label>
           <textarea id="cl-resp-textarea" class="cl-resp-textarea" placeholder="Digite sua resposta aqui..." ${isTurnedIn ? 'disabled' : ''}>${esc(existingAnswer)}</textarea>
         </div>
-        ${isTurnedIn
-          ? `<div class="cl-resp-status delivered">✅ Entregue</div>`
-          : `<div style="display:flex;gap:8px;margin-top:4px">
-               <button id="cl-resp-submit" class="cl-resp-submit-btn" onclick="window._entregarResposta('${courseId}','${cwId}','${subId}',false)">📤 Entregar</button>
-               <button class="cl-resp-save-btn" onclick="window._entregarResposta('${courseId}','${cwId}','${subId}',true)">💾 Salvar rascunho</button>
-             </div>`}
-        ${link ? `<a href="${esc(link)}" target="_blank" class="cl-resp-open-btn" style="margin-top:6px">🔗 Ver no Classroom</a>` : ''}`;
+        <div class="cl-resp-actions">
+          ${isTurnedIn
+            ? `<div class="cl-resp-status delivered">✅ Entregue</div>`
+            : `<button id="cl-resp-submit" class="cl-resp-submit-btn" onclick="window._entregarResposta('${courseId}','${cwId}','${subId}',false)">📤 Entregar</button>
+               <button class="cl-resp-save-btn" onclick="window._entregarResposta('${courseId}','${cwId}','${subId}',true)">💾 Rascunho</button>
+               <button id="cl-resp-ai-btn" class="cl-resp-ai-btn" onclick="window._gerarRespostaIA(${JSON.stringify(titulo)},${JSON.stringify(descricao)})">✨ Gerar com IA</button>`}
+        </div>
+        ${link ? `<a href="${esc(link)}" target="_blank" class="cl-resp-open-btn">🔗 Ver no Classroom</a>` : ''}`;
     } else {
       // ASSIGNMENT — não suporta upload de arquivo via app
       body.innerHTML = `
@@ -843,10 +844,40 @@ window._entregarResposta = async function(courseId, cwId, subId, apenasRascunho)
     }
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📤 Entregar'; }
     const saveBtn = document.querySelector('.cl-resp-save-btn');
-    if (saveBtn && apenasRascunho) { saveBtn.textContent = '✅ Salvo'; setTimeout(() => { saveBtn.textContent = '💾 Salvar rascunho'; }, 2000); }
+    if (saveBtn && apenasRascunho) { saveBtn.textContent = '✅ Salvo'; setTimeout(() => { saveBtn.textContent = '💾 Rascunho'; }, 2000); }
   } catch(err) {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📤 Entregar'; }
     alert('Erro ao enviar: ' + err.message);
+  }
+};
+
+// ─── IA: GERAR RESPOSTA PARA ATIVIDADE ───────────────────────────────────────
+window._gerarRespostaIA = async function(titulo, descricao) {
+  const textarea = document.getElementById('cl-resp-textarea');
+  const aiBtn    = document.getElementById('cl-resp-ai-btn');
+  if (!textarea || !aiBtn) return;
+
+  aiBtn.disabled = true;
+  aiBtn.textContent = '⏳ Gerando...';
+
+  try {
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) throw new Error('Faça login primeiro.');
+
+    const resp = await fetch(GEMINI_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ mode: 'answer', titulo, descricao }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Erro ao gerar resposta');
+
+    textarea.value = data.resposta;
+  } catch (err) {
+    alert('Erro ao gerar com IA: ' + err.message);
+  } finally {
+    aiBtn.disabled = false;
+    aiBtn.textContent = '✨ Gerar com IA';
   }
 };
 
