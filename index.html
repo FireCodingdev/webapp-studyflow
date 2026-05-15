@@ -63,7 +63,23 @@
           <label>Senha</label>
           <input type="password" id="login-password" class="form-input" placeholder="******">
         </div>
-        <p id="auth-error-login" class="auth-error" style="display: none;"></p>
+        <div id="auth-error-login-wrap" style="display:none">
+          <p id="auth-error-login" class="auth-error" style="display:inline">E-mail ou senha incorretos. </p><button class="auth-forgot-link" onclick="showForgotPassword()">Esqueci a senha</button>
+        </div>
+        <div id="forgot-password-section" style="display:none">
+          <div class="forgot-box">
+            <p class="forgot-title">Redefinir senha</p>
+            <p class="forgot-desc">Informe o e-mail da sua conta para receber o link de redefinição.</p>
+            <div class="form-group" style="margin-top:6px">
+              <input type="email" id="forgot-email" class="form-input" placeholder="seu@email.com">
+              <p id="forgot-feedback" class="forgot-feedback"></p>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:4px">
+              <button class="btn-primary" style="margin-top:0;flex:1" onclick="sendPasswordReset()">Enviar link</button>
+              <button class="forgot-cancel-btn" onclick="hideForgotPassword()">Cancelar</button>
+            </div>
+          </div>
+        </div>
         <button id="btn-login" class="btn-primary" onclick="handleLogin()">Entrar</button>
       </div>
 

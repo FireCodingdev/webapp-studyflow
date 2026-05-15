@@ -432,14 +432,20 @@ window.showAuthTab = function(tab) {
 window.handleLogin = async function() {
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
-  const errEl = document.getElementById('auth-error-login');
+  const errWrap = document.getElementById('auth-error-login-wrap');
   const btn = document.getElementById('btn-login');
 
-  if (!email || !password) { showAuthError(errEl, 'Preencha e-mail e senha'); return; }
+  if (!email || !password) {
+    const errEl = document.getElementById('auth-error-login');
+    errEl.textContent = 'Preencha e-mail e senha';
+    if (errWrap) { errWrap.style.display = 'block'; }
+    return;
+  }
 
   btn.disabled = true;
   btn.innerHTML = '<span>Entrando...</span>';
-  errEl.style.display = 'none';
+  if (errWrap) errWrap.style.display = 'none';
+  hideForgotPassword();
 
   try {
     await Promise.race([
@@ -447,12 +453,56 @@ window.handleLogin = async function() {
       new Promise((_, reject) => setTimeout(() => reject(new Error('AUTH_TIMEOUT')), 15000)),
     ]);
   } catch (err) {
-    const msg = err?.message === 'AUTH_TIMEOUT'
-      ? 'Tempo esgotado ao entrar. Verifique sua conexão e tente novamente.'
-      : translateAuthError(err.code);
-    showAuthError(errEl, msg);
+    const isCredError = ['auth/wrong-password','auth/invalid-credential','auth/user-not-found','auth/invalid-email'].includes(err.code);
+    const errEl = document.getElementById('auth-error-login');
+    if (isCredError) {
+      errEl.textContent = 'E-mail ou senha incorretos. ';
+    } else {
+      errEl.textContent = err?.message === 'AUTH_TIMEOUT'
+        ? 'Tempo esgotado. Verifique sua conexão. '
+        : translateAuthError(err.code) + '. ';
+    }
+    if (errWrap) errWrap.style.display = 'block';
+    // Pré-preenche o campo de redefinição com o email digitado
+    const forgotEmail = document.getElementById('forgot-email');
+    if (forgotEmail && email) forgotEmail.value = email;
     btn.disabled = false;
     btn.innerHTML = '<span>Entrar</span>';
+  }
+};
+
+window.showForgotPassword = function() {
+  const section = document.getElementById('forgot-password-section');
+  if (section) section.style.display = 'block';
+  const fb = document.getElementById('forgot-feedback');
+  if (fb) { fb.textContent = ''; fb.className = 'forgot-feedback'; }
+  document.getElementById('forgot-email')?.focus();
+};
+
+window.hideForgotPassword = function() {
+  const section = document.getElementById('forgot-password-section');
+  if (section) section.style.display = 'none';
+};
+
+window.sendPasswordReset = async function() {
+  const emailInput = document.getElementById('forgot-email');
+  const feedback   = document.getElementById('forgot-feedback');
+  const email = emailInput?.value?.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (feedback) { feedback.textContent = 'Informe um e-mail válido.'; feedback.className = 'forgot-feedback error'; }
+    return;
+  }
+  if (feedback) { feedback.textContent = '⏳ Enviando...'; feedback.className = 'forgot-feedback'; }
+  try {
+    const { sendPasswordResetEmail } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+    await sendPasswordResetEmail(auth, email);
+    if (feedback) { feedback.textContent = `✅ Link enviado para ${email}. Verifique sua caixa de entrada.`; feedback.className = 'forgot-feedback ok'; }
+    emailInput.disabled = true;
+    const sendBtn = document.querySelector('#forgot-password-section .btn-primary');
+    if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Enviado'; }
+  } catch(err) {
+    const msg = err.code === 'auth/user-not-found' ? 'Nenhuma conta com este e-mail.' : 'Erro ao enviar. Tente novamente.';
+    if (feedback) { feedback.textContent = msg; feedback.className = 'forgot-feedback error'; }
   }
 };
 
