@@ -14,7 +14,6 @@ import { initClassroom, renderPostsClassroom } from './classroom.js';
 import { renderFacapeSettingsSection, getFacapeData, clearFacapeData } from './facape.js';
 import { initFeed, renderFeed } from './social/feed.js';
 import { initRealtimeNotifications, stopRealtimeNotifications } from './social/notifications-rt.js';
-import { checkAchievements, showAchievementToast } from './components/achievement-toast.js';
 
 // ===== STATE =====
 // Helper: busca cor atual da matéria por id, com fallback por nome
@@ -354,7 +353,6 @@ async function initAppForUser(user) {
 
   showMainApp();
   initRealtimeNotifications(user.uid);
-  checkAchievements(STATE);
 }
 
 function showAuthScreen() {
