@@ -723,7 +723,7 @@ function _mostrarModalResumo(titulo, markdown, usedFile, driveFileId, driveAltLi
       </div>
       ${showBanner ? `
       <div class="cl-modal-upload-banner" id="cl-modal-upload-banner">
-        <span>⚠️ Não consegui acessar o PDF automaticamente.</span>
+        <span>⚠️ Não foi possível abrir o PDF, você deve baixar e enviar manualmente.</span>
         ${driveAltLink ? `<a class="cl-modal-open-pdf-link" href="${driveAltLink}" target="_blank" rel="noopener">📄 Abrir PDF</a>` : ''}
         <input type="file" id="cl-modal-file-input" accept=".pdf,image/*" style="display:none">
         <label class="cl-modal-btn cl-modal-btn--resumir-manual" for="cl-modal-file-input">📎 Selecionar e resumir</label>
