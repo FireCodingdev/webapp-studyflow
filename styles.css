@@ -3106,3 +3106,93 @@ textarea.accs-input {
   border-color: transparent; background: transparent;
 }
 .cl-subject-pick-btn--cancel:hover { background: rgba(255,71,87,0.08); color: #ff4757; }
+
+/* ── Filter tabs ─────────────────────────────────────────────────────── */
+.filter-tabs {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.filter-tab {
+  padding: 6px 13px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  border: 1px solid var(--border); background: var(--bg3); color: var(--text2);
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.filter-tab:hover { background: rgba(108,99,255,0.1); color: var(--text); border-color: rgba(108,99,255,0.3); }
+.filter-tab.active { background: rgba(108,99,255,0.18); color: var(--accent); border-color: rgba(108,99,255,0.45); }
+
+/* ── Tags ────────────────────────────────────────────────────────────── */
+.tag {
+  display: inline-flex; align-items: center;
+  padding: 2px 7px; border-radius: 20px; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.2px;
+}
+.tag-subject  { opacity: 0.9; }
+.tag-exam     { background: rgba(255,71,87,0.12); color: #ff4757; }
+.tag-deadline { background: rgba(255,71,87,0.15); color: #ff6b81; }
+.tag-ok       { background: rgba(46,213,115,0.12); color: #2ed573; }
+
+/* ── Task cards ──────────────────────────────────────────────────────── */
+.task-card {
+  display: flex; align-items: stretch;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.task-card:hover { border-color: rgba(108,99,255,0.3); box-shadow: 0 2px 12px rgba(0,0,0,0.18); }
+.task-card.done  { opacity: 0.55; }
+
+.task-card-bar {
+  width: 4px; flex-shrink: 0; border-radius: 12px 0 0 12px;
+}
+.task-card-top {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 12px 12px 10px; flex: 1; min-width: 0;
+}
+
+.task-check {
+  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; margin-top: 2px;
+  border: 2px solid var(--border); cursor: pointer; display: flex;
+  align-items: center; justify-content: center; transition: all 0.15s;
+}
+.task-check:hover { border-color: var(--accent); }
+.task-check.checked { background: var(--accent); border-color: var(--accent); }
+.task-check.checked svg { width: 11px; height: 11px; stroke: #fff; }
+
+.task-content { flex: 1; min-width: 0; }
+.task-title   { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.4; }
+
+.task-notes {
+  font-size: 12px; color: var(--text2); margin-top: 4px;
+  white-space: pre-line; cursor: pointer; line-height: 1.5;
+  display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; transition: all 0.2s;
+}
+.task-notes:not(.collapsed) {
+  display: block; -webkit-line-clamp: unset; line-clamp: unset; overflow: visible;
+}
+
+.task-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+
+.task-delete {
+  flex-shrink: 0; padding: 4px; background: transparent; border: none;
+  color: var(--text2); cursor: pointer; border-radius: 6px; opacity: 0.4;
+  transition: opacity 0.15s, background 0.15s;
+}
+.task-delete:hover { opacity: 1; background: rgba(255,71,87,0.12); color: #ff4757; }
+.task-delete svg   { width: 16px; height: 16px; }
+
+/* ── Task group headers ──────────────────────────────────────────────── */
+.task-group-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 2px; margin: 14px 0 6px;
+  font-size: 12px; font-weight: 700; color: var(--text2);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.task-group-header:first-child { margin-top: 0; }
+.task-group-header--toggle { cursor: pointer; user-select: none; }
+.task-group-header--toggle:hover { color: var(--text); }
+.task-group-count {
+  background: rgba(255,255,255,0.07); border-radius: 20px;
+  padding: 1px 7px; font-size: 11px; font-weight: 700;
+}
+
+#task-done-group.collapsed { display: none; }

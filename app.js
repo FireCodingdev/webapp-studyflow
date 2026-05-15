@@ -1163,45 +1163,170 @@ window.deleteClass = async function(id) {
 
 // ===== RENDER TASKS =====
 function renderTasks(subjectFilter = null) {
-  let tasks = [...STATE.tasks];
-  if (subjectFilter) {
-    tasks = tasks.filter(t => t.subjectId === subjectFilter);
-  } else {
-    if (STATE.taskFilter === 'pending') tasks = tasks.filter(t => !t.done);
-    else if (STATE.taskFilter === 'done') tasks = tasks.filter(t => t.done);
-    else if (STATE.taskFilter === 'exam') tasks = tasks.filter(t => t.type === 'exam');
-  }
-  tasks.sort((a, b) => {
-    if (!a.done && b.done) return -1;
-    if (a.done && !b.done) return 1;
-    return (a.deadline || '9999-12-31') < (b.deadline || '9999-12-31') ? -1 : 1;
-  });
   const el = document.getElementById('tasks-list');
   if (!el) return;
-  el.innerHTML = tasks.length === 0 ? `
-    <div class="empty-state">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/></svg>
-      <p>Nenhuma atividade</p>
-      <button onclick="openAddTask()">Criar atividade</button>
-    </div>` : tasks.map(t => renderTaskCard(t)).join('');
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const in7 = new Date(); in7.setDate(in7.getDate() + 7);
+  const in7Str = in7.toISOString().slice(0, 10);
+
+  let tasks = [...STATE.tasks];
+
+  // Filtro por matéria (vindo de outra aba)
+  if (subjectFilter) {
+    tasks = tasks.filter(t => t.subjectId === subjectFilter);
+    tasks.sort((a, b) => {
+      if (!a.done && b.done) return -1;
+      if (a.done && !b.done) return 1;
+      return (a.deadline || '9999-12-31') < (b.deadline || '9999-12-31') ? -1 : 1;
+    });
+    el.innerHTML = tasks.length === 0 ? `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/></svg>
+        <p>Nenhuma atividade</p><button onclick="openAddTask()">Criar atividade</button>
+      </div>` : tasks.map(t => renderTaskCard(t)).join('');
+    return;
+  }
+
+  const filter = STATE.taskFilter || 'all';
+
+  // Filtros simples
+  if (filter === 'pending') {
+    const list = tasks.filter(t => !t.done)
+      .sort((a, b) => (a.deadline || '9999-12-31') < (b.deadline || '9999-12-31') ? -1 : 1);
+    el.innerHTML = list.length === 0
+      ? _emptyTasksHtml('Nenhuma atividade pendente')
+      : list.map(t => renderTaskCard(t)).join('');
+    _updateFilterCounts();
+    return;
+  }
+  if (filter === 'overdue') {
+    const list = tasks.filter(t => !t.done && t.deadline && t.deadline < todayStr)
+      .sort((a, b) => b.deadline < a.deadline ? -1 : 1);
+    el.innerHTML = list.length === 0
+      ? _emptyTasksHtml('Nenhuma atividade atrasada')
+      : list.map(t => renderTaskCard(t, true)).join('');
+    _updateFilterCounts();
+    return;
+  }
+  if (filter === 'exam') {
+    const list = tasks.filter(t => t.type === 'exam')
+      .sort((a, b) => {
+        if (!a.done && b.done) return -1;
+        if (a.done && !b.done) return 1;
+        return (a.deadline || '9999-12-31') < (b.deadline || '9999-12-31') ? -1 : 1;
+      });
+    el.innerHTML = list.length === 0
+      ? _emptyTasksHtml('Nenhuma prova cadastrada')
+      : list.map(t => renderTaskCard(t)).join('');
+    _updateFilterCounts();
+    return;
+  }
+  if (filter === 'done') {
+    const list = tasks.filter(t => t.done)
+      .sort((a, b) => (b.deadline || '') < (a.deadline || '') ? -1 : 1);
+    el.innerHTML = list.length === 0
+      ? _emptyTasksHtml('Nenhuma atividade concluída')
+      : list.map(t => renderTaskCard(t)).join('');
+    _updateFilterCounts();
+    return;
+  }
+
+  // Filtro "Todas" — agrupamento visual
+  const pending  = tasks.filter(t => !t.done);
+  const done     = tasks.filter(t => t.done);
+
+  const overdue  = pending.filter(t => t.deadline && t.deadline < todayStr)
+    .sort((a, b) => b.deadline < a.deadline ? -1 : 1);
+  const thisWeek = pending.filter(t => t.deadline && t.deadline >= todayStr && t.deadline <= in7Str)
+    .sort((a, b) => a.deadline < b.deadline ? -1 : 1);
+  const upcoming = pending.filter(t => !t.deadline || t.deadline > in7Str)
+    .sort((a, b) => (a.deadline || '9999-12-31') < (b.deadline || '9999-12-31') ? -1 : 1);
+
+  if (tasks.length === 0) {
+    el.innerHTML = _emptyTasksHtml('Nenhuma atividade');
+    _updateFilterCounts();
+    return;
+  }
+
+  const groupHtml = (icon, label, items, markOverdue = false) => {
+    if (!items.length) return '';
+    return `
+      <div class="task-group-header"><span>${icon} ${label}</span><span class="task-group-count">${items.length}</span></div>
+      ${items.map(t => renderTaskCard(t, markOverdue)).join('')}`;
+  };
+
+  const doneGroupId = 'task-done-group';
+  const doneHtml = done.length ? `
+    <div class="task-group-header task-group-header--toggle" onclick="
+      var g=document.getElementById('${doneGroupId}');
+      var c=this.querySelector('.task-group-chevron');
+      g.classList.toggle('collapsed');
+      c.style.transform=g.classList.contains('collapsed')?'':'rotate(180deg)';
+    ">
+      <span>✅ Concluídas</span>
+      <span style="display:flex;align-items:center;gap:6px">
+        <span class="task-group-count">${done.length}</span>
+        <svg class="task-group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="transform:rotate(180deg);transition:transform 0.2s"><polyline points="18 15 12 9 6 15"/></svg>
+      </span>
+    </div>
+    <div id="${doneGroupId}" class="collapsed">
+      ${done.sort((a,b) => (b.deadline||'') < (a.deadline||'') ? -1 : 1).map(t => renderTaskCard(t)).join('')}
+    </div>` : '';
+
+  el.innerHTML =
+    groupHtml('🔴', 'Atrasadas', overdue, true) +
+    groupHtml('📅', 'Esta semana', thisWeek) +
+    groupHtml('📋', 'Próximas', upcoming) +
+    doneHtml;
+
+  _updateFilterCounts();
 }
 
-function renderTaskCard(task) {
+function _emptyTasksHtml(msg) {
+  return `<div class="empty-state">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/></svg>
+    <p>${msg}</p><button onclick="openAddTask()">Criar atividade</button>
+  </div>`;
+}
+
+function _updateFilterCounts() {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const counts = {
+    all:     STATE.tasks.length,
+    pending: STATE.tasks.filter(t => !t.done).length,
+    overdue: STATE.tasks.filter(t => !t.done && t.deadline && t.deadline < todayStr).length,
+    exam:    STATE.tasks.filter(t => t.type === 'exam').length,
+    done:    STATE.tasks.filter(t => t.done).length,
+  };
+  const labels = { all: 'Todas', pending: 'Pendentes', overdue: 'Atrasadas', exam: 'Provas', done: 'Concluídas' };
+  document.querySelectorAll('.filter-tab[data-filter]').forEach(btn => {
+    const f = btn.dataset.filter;
+    if (f in counts) btn.textContent = counts[f] > 0 ? `${labels[f]} (${counts[f]})` : labels[f];
+  });
+}
+
+function renderTaskCard(task, markOverdue = false) {
   const deadlineLabel = task.deadline ? formatDeadline(task.deadline) : '';
   const typeLabels = { task: 'Atividade', exam: '📝 Prova', work: 'Trabalho', study: 'Estudo' };
+  const subjectColor = getSubjectColor(task.subjectId, task.subjectName, task.subjectColor);
+  const barColor = task.type === 'exam' ? '#ff4757' : (subjectColor || 'var(--accent)');
+  const isOverdue = markOverdue || task._overdue;
+  const notesId = `task-notes-${task.id}`;
   return `
     <div class="task-card ${task.done ? 'done' : ''} fade-in" id="task-${task.id}">
+      <div class="task-card-bar" style="background:${barColor}"></div>
       <div class="task-card-top">
         <div class="task-check ${task.done ? 'checked' : ''}" onclick="toggleTask('${task.id}')">
           ${task.done ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>' : ''}
         </div>
         <div class="task-content">
           <div class="task-title" style="${task.done ? 'text-decoration:line-through;color:var(--text2)' : ''}">${escapeHtml(task.title)}</div>
-          ${task.notes ? `<div style="font-size:12px;color:var(--text2);margin-top:3px;white-space:pre-line">${escapeHtml(task.notes)}</div>` : ''}
+          ${task.notes ? `<div id="${notesId}" class="task-notes collapsed" onclick="this.classList.toggle('collapsed')">${escapeHtml(task.notes)}</div>` : ''}
           <div class="task-meta">
-            ${task.subjectName ? `<span class="tag tag-subject" style="background:${getSubjectColor(task.subjectId, task.subjectName, task.subjectColor)}22;color:${getSubjectColor(task.subjectId, task.subjectName, task.subjectColor)}">${escapeHtml(task.subjectName)}</span>` : ''}
+            ${task.subjectName ? `<span class="tag tag-subject" style="background:${subjectColor}22;color:${subjectColor}">${escapeHtml(task.subjectName)}</span>` : ''}
             ${task.type === 'exam' ? `<span class="tag tag-exam">${typeLabels[task.type]}</span>` : ''}
-            ${task._overdue ? `<span class="tag tag-deadline">ATRASADA</span>` : ''}
+            ${isOverdue ? `<span class="tag tag-deadline">ATRASADA</span>` : ''}
             ${deadlineLabel ? `<span class="tag ${isUrgent(task.deadline) ? 'tag-deadline' : 'tag-ok'}">${deadlineLabel}</span>` : ''}
           </div>
         </div>
@@ -1252,8 +1377,8 @@ window.deleteTask = async function(id) {
 
 window.filterTasks = function(filter) {
   STATE.taskFilter = filter;
-  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
-  document.querySelector(`[data-filter="${filter}"]`)?.classList.add('active');
+  document.querySelectorAll('.filter-tab[data-filter]').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.filter-tab[data-filter="${filter}"]`)?.classList.add('active');
   renderTasks();
 };
 

@@ -24,7 +24,8 @@
       "Bash(waitfor /t 60 signal)",
       "Bash(waitfor /t 90 signal)",
       "Bash(node functions/test-facape.js)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(python -c ' *)"
     ]
   }
 }
