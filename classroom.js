@@ -62,6 +62,12 @@ export function initClassroom(STATE, hooks) {
     renderPostsClassroom(token, el, 5);
   };
 
+  // Expõe STATE subjects e função de abrir resumo salvo
+  window._STATE_subjects = () => _STATE?.subjects || [];
+  window._abrirModalResumoSalvo = (titulo, conteudo) => {
+    _mostrarModalResumo(titulo, conteudo, true, null, null, '', null, '');
+  };
+
   // Expõe função de conexão para o painel de configurações
   window._conectarClassroom = async () => {
     const currentUid = auth.currentUser?.uid;
@@ -678,7 +684,8 @@ window._resumirPostClassroom = async function(btn) {
     }
 
     const { resumo, usedFile } = await resp.json();
-    _mostrarModalResumo(titulo, resumo, usedFile, driveFileId, driveAltLink, textoPrincipal, idToken);
+    const turma = btn.dataset.turma || '';
+    _mostrarModalResumo(titulo, resumo, usedFile, driveFileId, driveAltLink, textoPrincipal, idToken, turma);
 
   } catch (err) {
     alert('Não foi possível resumir: ' + err.message);
@@ -689,7 +696,7 @@ window._resumirPostClassroom = async function(btn) {
   }
 };
 
-function _mostrarModalResumo(titulo, markdown, usedFile, driveFileId, driveAltLink, textoPrincipal, idToken) {
+function _mostrarModalResumo(titulo, markdown, usedFile, driveFileId, driveAltLink, textoPrincipal, idToken, turma) {
   document.getElementById('cl-resumo-modal')?.remove();
 
   const showBanner = driveFileId && !usedFile;
@@ -717,10 +724,9 @@ function _mostrarModalResumo(titulo, markdown, usedFile, driveFileId, driveAltLi
       ${showBanner ? `
       <div class="cl-modal-upload-banner" id="cl-modal-upload-banner">
         <span>⚠️ Não consegui acessar o PDF automaticamente.</span>
+        ${driveAltLink ? `<a class="cl-modal-open-pdf-link" href="${driveAltLink}" target="_blank" rel="noopener">📄 Abrir PDF</a>` : ''}
         <input type="file" id="cl-modal-file-input" accept=".pdf,image/*" style="display:none">
-        <button class="cl-modal-btn cl-modal-btn--resumir-manual" id="cl-modal-retry-btn">
-          📥 Baixar PDF e resumir novamente
-        </button>
+        <label class="cl-modal-btn cl-modal-btn--resumir-manual" for="cl-modal-file-input">📎 Selecionar e resumir</label>
       </div>` : ''}
       <div class="cl-modal-body" id="cl-modal-content">${_markdownParaHtml(markdown)}</div>
     </div>`;
@@ -733,35 +739,32 @@ function _mostrarModalResumo(titulo, markdown, usedFile, driveFileId, driveAltLi
   const contentEl = document.getElementById('cl-modal-content');
   if (contentEl) contentEl._mdSource = markdown;
 
-  // Salvar resumo na conta (Firestore)
+  // Salvar resumo na matéria correspondente
   document.getElementById('cl-modal-save').addEventListener('click', async () => {
     const saveBtn = document.getElementById('cl-modal-save');
-    saveBtn.disabled = true;
-    saveBtn.textContent = '⏳ Salvando...';
-    try {
-      const uid = auth.currentUser?.uid;
-      if (!uid) throw new Error('login necessário');
-      const { doc: fsDoc, getDoc: fsGetDoc, updateDoc: fsUpdateDoc, setDoc: fsSetDoc } =
-        await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-      const { db } = await import('./firebase.js');
-      const ref   = fsDoc(db, 'users', uid);
-      const snap  = await fsGetDoc(ref);
-      const existing = snap.data()?.classroomSummaries || [];
-      const entry = {
-        titulo,
-        resumo: contentEl?._mdSource || markdown,
-        savedAt: new Date().toISOString(),
-      };
-      // Evita duplicatas pelo título
-      const filtered = existing.filter(s => s.titulo !== titulo);
-      await fsUpdateDoc(ref, { classroomSummaries: [...filtered, entry] });
-      saveBtn.textContent = '✅ Salvo!';
-      saveBtn.style.color = '#2ed573';
-      saveBtn.style.borderColor = 'rgba(46,213,115,0.4)';
-    } catch (err) {
-      saveBtn.disabled = false;
-      saveBtn.textContent = '🔖 Salvar';
-      alert('Erro ao salvar: ' + err.message);
+    if (saveBtn.disabled) return;
+
+    const conteudo = contentEl?._mdSource || markdown;
+    const resumoEntry = { id: Date.now().toString(), titulo, conteudo, turma, savedAt: new Date().toISOString() };
+
+    // Tenta encontrar a matéria automaticamente
+    const subject = window._findSubjectByTurma?.(turma);
+
+    if (subject) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = '⏳ Salvando...';
+      const ok = await window._saveResumoToSubject?.(subject.id, resumoEntry);
+      if (ok) {
+        saveBtn.textContent = `✅ Salvo em ${subject.name.slice(0, 20)}`;
+        saveBtn.style.color = '#2ed573';
+        saveBtn.style.borderColor = 'rgba(46,213,115,0.4)';
+      } else {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '🔖 Salvar';
+      }
+    } else {
+      // Nenhuma matéria encontrada — mostra seletor inline
+      _mostrarSeletorMateria(saveBtn, resumoEntry);
     }
   });
 
@@ -778,15 +781,8 @@ function _mostrarModalResumo(titulo, markdown, usedFile, driveFileId, driveAltLi
   if (!showBanner) return;
 
   const fileInput = document.getElementById('cl-modal-file-input');
-  const retryBtn  = document.getElementById('cl-modal-retry-btn');
 
-  // Botão único: abre o PDF no Drive + abre o seletor de arquivo
-  retryBtn.addEventListener('click', () => {
-    if (driveAltLink) window.open(driveAltLink, '_blank');
-    fileInput.click();
-  });
-
-  // Assim que o arquivo for selecionado, re-resume automaticamente
+  // Assim que o arquivo for selecionado pelo label, re-resume automaticamente
   fileInput.addEventListener('change', async () => {
     const file = fileInput.files?.[0];
     if (!file) return;
@@ -837,13 +833,40 @@ function _mostrarModalResumo(titulo, markdown, usedFile, driveFileId, driveAltLi
       if (banner) {
         banner.innerHTML = `
           <span style="color:#ff4757">❌ Erro: ${esc(err.message)}</span>
-          <button class="cl-modal-btn cl-modal-btn--resumir-manual" id="cl-modal-retry-btn" style="margin-left:8px">Tentar novamente</button>`;
-        document.getElementById('cl-modal-retry-btn')?.addEventListener('click', () => {
-          if (driveAltLink) window.open(driveAltLink, '_blank');
-          fileInput.click();
-        });
+          <input type="file" id="cl-modal-file-input" accept=".pdf,image/*" style="display:none">
+          <label class="cl-modal-btn cl-modal-btn--resumir-manual" for="cl-modal-file-input">📎 Tentar novamente</label>`;
+        document.getElementById('cl-modal-file-input')?.addEventListener('change', () => fileInput.dispatchEvent(new Event('change')));
       }
     }
+  });
+}
+
+function _mostrarSeletorMateria(saveBtn, resumoEntry) {
+  const subjects = window._STATE_subjects?.() || [];
+  if (!subjects.length) { alert('Adicione matérias primeiro.'); return; }
+
+  const sel = document.createElement('div');
+  sel.className = 'cl-subject-picker';
+  sel.innerHTML = `
+    <span style="font-size:12px;color:var(--text2)">Escolha a matéria:</span>
+    ${subjects.map(s => `
+      <button class="cl-subject-pick-btn" data-id="${s.id}" style="border-left:3px solid ${s.color}">
+        ${esc(s.name.slice(0, 25))}
+      </button>`).join('')}
+    <button class="cl-subject-pick-btn cl-subject-pick-btn--cancel">Cancelar</button>`;
+
+  saveBtn.replaceWith(sel);
+
+  sel.querySelectorAll('[data-id]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ok = await window._saveResumoToSubject?.(btn.dataset.id, resumoEntry);
+      if (ok) {
+        sel.outerHTML = `<button class="cl-modal-btn cl-modal-btn--save" style="color:#2ed573;border-color:rgba(46,213,115,0.4)" disabled>✅ Salvo!</button>`;
+      }
+    });
+  });
+  sel.querySelector('.cl-subject-pick-btn--cancel')?.addEventListener('click', () => {
+    sel.outerHTML = `<button class="cl-modal-btn cl-modal-btn--save" id="cl-modal-save">🔖 Salvar</button>`;
   });
 }
 

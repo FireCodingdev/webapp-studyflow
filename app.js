@@ -1824,6 +1824,15 @@ function renderLinks() {
           </div>
         </div>
 
+        <!-- RESUMOS DE IA -->
+        <div class="mat-section">
+          <div class="mat-section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            Resumos de IA
+          </div>
+          <div class="mat-resumos-list" id="mat-resumos-${s.id}"></div>
+        </div>
+
         <!-- ARQUIVOS LOCAIS -->
         <div class="mat-section">
           <div class="mat-section-title">
@@ -1856,6 +1865,96 @@ function renderLinks() {
       </div>
     </div>`;
   }).join('');
+
+  // Popula a lista de resumos de cada matéria
+  STATE.subjects.forEach(s => {
+    const el2 = document.getElementById(`mat-resumos-${s.id}`);
+    if (el2) _renderSubjectResumos(s.id, el2);
+  });
+}
+
+// ─── RESUMOS DE IA: salvar e exibir ──────────────────────────────────────────
+
+function _normStr(s) {
+  return String(s).toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function _findSubjectByTurma(turmaName) {
+  if (!turmaName || !STATE.subjects?.length) return null;
+  const turmaNorm = _normStr(turmaName);
+  let best = null, bestScore = 0;
+  for (const s of STATE.subjects) {
+    const words = _normStr(s.name).split(' ').filter(w => w.length > 2);
+    if (!words.length) continue;
+    const hits = words.filter(w => turmaNorm.includes(w)).length;
+    const score = hits / words.length;
+    if (score > bestScore) { bestScore = score; best = s; }
+  }
+  return bestScore >= 0.4 ? best : null;
+}
+
+window._saveResumoToSubject = async function(subjectId, resumoData) {
+  const subject = STATE.subjects.find(s => s.id === subjectId);
+  if (!subject) return false;
+  subject.resumos = (subject.resumos || []).filter(r => r.id !== resumoData.id);
+  subject.resumos.push(resumoData);
+  await save();
+  // Atualiza a seção de resumos se a aba Materiais estiver aberta
+  const resumosEl = document.getElementById(`mat-resumos-${subjectId}`);
+  if (resumosEl) _renderSubjectResumos(subjectId, resumosEl);
+  return true;
+};
+
+window._findSubjectByTurma = _findSubjectByTurma;
+
+window.openResumoIA = function(subjectId, resumoId) {
+  const subject = STATE.subjects.find(s => s.id === subjectId);
+  const resumo  = subject?.resumos?.find(r => r.id === resumoId);
+  if (!resumo) return;
+  // Reutiliza o modal do classroom.js se disponível, senão abre modal simples
+  if (window._abrirModalResumoSalvo) {
+    window._abrirModalResumoSalvo(resumo.titulo, resumo.conteudo);
+  } else {
+    openModal(resumo.titulo, `<div style="white-space:pre-wrap;font-size:13px;line-height:1.6">${escapeHtml(resumo.conteudo)}</div>`);
+  }
+};
+
+window.deleteResumoIA = async function(subjectId, resumoId) {
+  const subject = STATE.subjects.find(s => s.id === subjectId);
+  if (!subject) return;
+  subject.resumos = (subject.resumos || []).filter(r => r.id !== resumoId);
+  await save();
+  const resumosEl = document.getElementById(`mat-resumos-${subjectId}`);
+  if (resumosEl) _renderSubjectResumos(subjectId, resumosEl);
+};
+
+function _renderSubjectResumos(subjectId, el) {
+  const subject = STATE.subjects.find(s => s.id === subjectId);
+  const resumos = subject?.resumos || [];
+  if (resumos.length === 0) {
+    el.innerHTML = `<span class="mat-empty-hint">Nenhum resumo salvo ainda</span>`;
+    return;
+  }
+  el.innerHTML = resumos
+    .sort((a, b) => b.savedAt.localeCompare(a.savedAt))
+    .map(r => {
+      const date = new Date(r.savedAt).toLocaleDateString('pt-BR', { day:'2-digit', month:'short' });
+      return `
+        <div class="mat-resumo-card">
+          <div class="mat-resumo-info" onclick="openResumoIA('${subjectId}','${r.id}')">
+            <span class="mat-resumo-icon">✨</span>
+            <div class="mat-resumo-text">
+              <span class="mat-resumo-titulo">${escapeHtml(r.titulo)}</span>
+              <span class="mat-resumo-date">${date}</span>
+            </div>
+          </div>
+          <button class="mat-resumo-del" onclick="deleteResumoIA('${subjectId}','${r.id}')" title="Excluir">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+          </button>
+        </div>`;
+    }).join('');
 }
 
 window.toggleMatBlock = function(id) {
