@@ -612,7 +612,7 @@ function renderPostCard(post) {
         </a>`).join('')}</div>`
     : '';
 
-  const tituloHtml = (isMaterial && !textoRaw && post.title)
+  const tituloHtml = (tipo === 'material' && !textoRaw && post.title)
     ? `<p class="cl-post-text cl-post-title-material">${esc(post.title)}</p>`
     : '';
 
