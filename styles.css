@@ -3076,3 +3076,32 @@ textarea.accs-input {
 }
 .facape-status-badge.connected { background: rgba(46,213,115,0.15); color: #2ed573; }
 .facape-status-badge.disconnected { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.5); }
+
+/* ── Classroom modal: PDF link + subject picker ─────────────────────── */
+.cl-modal-open-pdf-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 8px;
+  background: rgba(108,99,255,0.12); border: 1px solid rgba(108,99,255,0.3);
+  color: var(--accent); font-size: 13px; font-weight: 600;
+  text-decoration: none; transition: background 0.15s;
+}
+.cl-modal-open-pdf-link:hover { background: rgba(108,99,255,0.22); }
+
+.cl-subject-picker {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 6px; padding: 10px;
+  background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+  border-radius: 10px; animation: fadeIn 0.15s ease;
+}
+.cl-subject-pick-btn {
+  padding: 8px 12px; border-radius: 8px; text-align: left;
+  background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+  color: var(--text); font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: background 0.15s;
+}
+.cl-subject-pick-btn:hover { background: rgba(108,99,255,0.14); }
+.cl-subject-pick-btn--cancel {
+  color: var(--text2); font-size: 12px; font-weight: 400;
+  border-color: transparent; background: transparent;
+}
+.cl-subject-pick-btn--cancel:hover { background: rgba(255,71,87,0.08); color: #ff4757; }
