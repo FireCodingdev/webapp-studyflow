@@ -736,10 +736,11 @@ window._abrirModalResponder = async function(btn) {
   overlay.innerHTML = `
     <div class="cl-modal-box cl-resp-box">
       <div class="cl-modal-header">
-        <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+        <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1">
           <span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px">📝 Atividade</span>
           <span style="font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(titulo)}</span>
         </div>
+        ${link ? `<a href="${esc(link)}" target="_blank" style="font-size:12px;color:var(--text2);text-decoration:underline;white-space:nowrap;align-self:center;margin-right:10px;background:none;border:none;cursor:pointer">Ver no Classroom →</a>` : ''}
         <button onclick="document.getElementById('cl-resp-overlay').remove()" style="background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer;padding:4px;line-height:1">✕</button>
       </div>
       ${due ? `<div class="cl-resp-due">⏰ Entrega: <strong>${esc(due)}</strong></div>` : ''}
@@ -772,6 +773,7 @@ window._abrirModalResponder = async function(btn) {
     const subId      = submission?.id || null;
     const state      = submission?.state || 'NEW';
     const isTurnedIn = state === 'TURNED_IN' || state === 'RETURNED';
+    if (isTurnedIn) window._marcarAtividadeEntregue(cwId);
     const existingAnswer = isShortAnswer
       ? (submission?.shortAnswerSubmission?.answer || '')
       : '';
@@ -790,8 +792,7 @@ window._abrirModalResponder = async function(btn) {
             : `<button id="cl-resp-submit" class="cl-resp-submit-btn" onclick="window._entregarResposta('${courseId}','${cwId}','${subId}',false)">📤 Entregar</button>
                <button class="cl-resp-save-btn" onclick="window._entregarResposta('${courseId}','${cwId}','${subId}',true)">💾 Rascunho</button>
                <button id="cl-resp-ai-btn" class="cl-resp-ai-btn" data-titulo="${esc(titulo)}" data-descricao="${esc(descricao)}" onclick="window._gerarRespostaIA()">✨ Gerar com IA</button>`}
-        </div>
-        ${link ? `<a href="${esc(link)}" target="_blank" class="cl-resp-open-btn">🔗 Ver no Classroom</a>` : ''}`;
+        </div>`;
     } else {
       // ASSIGNMENT — não suporta upload de arquivo via app
       body.innerHTML = `
@@ -839,6 +840,7 @@ window._entregarResposta = async function(courseId, cwId, subId, apenasRascunho)
         );
         const body = document.getElementById('cl-resp-body');
         if (body) body.innerHTML = `<div class="cl-resp-status delivered">✅ Atividade entregue com sucesso!</div>`;
+        window._marcarAtividadeEntregue(cwId);
         return;
       }
     }
@@ -848,6 +850,20 @@ window._entregarResposta = async function(courseId, cwId, subId, apenasRascunho)
   } catch(err) {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📤 Entregar'; }
     alert('Erro ao enviar: ' + err.message);
+  }
+};
+
+// ─── MARCAR CARD COMO ENTREGUE ───────────────────────────────────────────────
+window._marcarAtividadeEntregue = function(cwId) {
+  const respBtn = document.querySelector(`.cl-responder-btn[data-cw-id="${cwId}"]`);
+  if (!respBtn) return;
+  const card = respBtn.closest('.cl-post-card');
+  respBtn.remove();
+  if (!card) return;
+  const dueEl = card.querySelector('.cl-post-due');
+  if (dueEl) {
+    dueEl.innerHTML = '✅ Entregue!';
+    dueEl.style.cssText = 'color:#2ed573;background:rgba(46,213,115,0.1);border:1px solid rgba(46,213,115,0.25);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;margin-bottom:8px;display:inline-flex;align-items:center;gap:6px';
   }
 };
 
