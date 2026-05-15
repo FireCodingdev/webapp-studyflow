@@ -456,25 +456,74 @@ window.handleLogin = async function() {
   }
 };
 
-window.handleRegister = async function() {
-  const name = document.getElementById('reg-name').value.trim();
-  const email = document.getElementById('reg-email').value.trim();
-  const password = document.getElementById('reg-password').value;
-  const errEl = document.getElementById('auth-error-register');
-  const btn = document.getElementById('btn-register');
+// Verifica disponibilidade do username enquanto o usuário digita (com debounce)
+let _regUsernameTimer = null;
+window.checkRegUsername = function() {
+  const input    = document.getElementById('reg-username');
+  const feedback = document.getElementById('reg-username-feedback');
+  if (!input || !feedback) return;
+  const val = input.value.trim();
+  feedback.className = 'reg-username-feedback';
+  if (!val) { feedback.textContent = ''; return; }
+  if (val.length < 3) { feedback.textContent = 'Mínimo 3 caracteres'; feedback.className = 'reg-username-feedback error'; return; }
+  feedback.textContent = '⏳ Verificando...';
+  clearTimeout(_regUsernameTimer);
+  _regUsernameTimer = setTimeout(async () => {
+    try {
+      const { collection, query, where, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const snap = await getDocs(query(collection(db, 'user_profiles'), where('username', '==', val)));
+      if (snap.empty) {
+        feedback.textContent = '✅ @' + val + ' disponível';
+        feedback.className = 'reg-username-feedback ok';
+      } else {
+        feedback.textContent = '❌ @' + val + ' já está em uso';
+        feedback.className = 'reg-username-feedback error';
+      }
+    } catch(_) { feedback.textContent = ''; }
+  }, 600);
+};
 
-  if (!name || !email || !password) { showAuthError(errEl, 'Preencha todos os campos'); return; }
+window.handleRegister = async function() {
+  const name     = document.getElementById('reg-name').value.trim();
+  const username = document.getElementById('reg-username').value.trim();
+  const email    = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const errEl    = document.getElementById('auth-error-register');
+  const btn      = document.getElementById('btn-register');
+
+  if (!name || !username || !email || !password) { showAuthError(errEl, 'Preencha todos os campos'); return; }
+  if (username.length < 3 || !/^[a-z0-9_]{3,20}$/.test(username)) {
+    showAuthError(errEl, 'Nome de usuário inválido (3–20 caracteres: letras, números ou _)'); return;
+  }
   if (password.length < 6) { showAuthError(errEl, 'Senha deve ter ao menos 6 caracteres'); return; }
 
   btn.disabled = true;
-  btn.innerHTML = '<span>Criando conta...</span>';
+  btn.innerHTML = '<span>Verificando...</span>';
   errEl.style.display = 'none';
 
+  // Verifica unicidade do username antes de criar a conta
   try {
-    await Promise.race([
+    const { collection, query, where, getDocs, setDoc, doc: _doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const snap = await getDocs(query(collection(db, 'user_profiles'), where('username', '==', username)));
+    if (!snap.empty) {
+      showAuthError(errEl, '@' + username + ' já está em uso. Escolha outro.');
+      btn.disabled = false;
+      btn.innerHTML = '<span>Criar conta</span>';
+      return;
+    }
+
+    btn.innerHTML = '<span>Criando conta...</span>';
+    const user = await Promise.race([
       registerUser(email, password, name),
       new Promise((_, reject) => setTimeout(() => reject(new Error('AUTH_TIMEOUT')), 20000)),
     ]);
+
+    // Salva username e perfil público no Firestore
+    localStorage.setItem('accs_username', username);
+    await setDoc(_doc(db, 'user_profiles', user.uid), {
+      uid: user.uid, email: user.email, displayName: name,
+      username, bio: '', updatedAt: new Date().toISOString(),
+    });
   } catch (err) {
     const msg = err?.message === 'AUTH_TIMEOUT'
       ? 'Tempo esgotado ao criar conta. Verifique sua conexão e tente novamente.'

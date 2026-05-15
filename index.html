@@ -73,6 +73,16 @@
           <input type="text" id="reg-name" class="form-input" placeholder="Como quer ser chamado?">
         </div>
         <div class="form-group">
+          <label>Nome de Usuário</label>
+          <div class="reg-username-wrap">
+            <span class="reg-username-at">@</span>
+            <input type="text" id="reg-username" class="form-input reg-username-input"
+              placeholder="seu_usuario" maxlength="20"
+              oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9_]/g,'');checkRegUsername()">
+          </div>
+          <p id="reg-username-feedback" class="reg-username-feedback"></p>
+        </div>
+        <div class="form-group">
           <label>E-mail</label>
           <input type="email" id="reg-email" class="form-input" placeholder="seu@email.com">
         </div>
