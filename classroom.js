@@ -789,7 +789,7 @@ window._abrirModalResponder = async function(btn) {
             ? `<div class="cl-resp-status delivered">✅ Entregue</div>`
             : `<button id="cl-resp-submit" class="cl-resp-submit-btn" onclick="window._entregarResposta('${courseId}','${cwId}','${subId}',false)">📤 Entregar</button>
                <button class="cl-resp-save-btn" onclick="window._entregarResposta('${courseId}','${cwId}','${subId}',true)">💾 Rascunho</button>
-               <button id="cl-resp-ai-btn" class="cl-resp-ai-btn" onclick="window._gerarRespostaIA(${JSON.stringify(titulo)},${JSON.stringify(descricao)})">✨ Gerar com IA</button>`}
+               <button id="cl-resp-ai-btn" class="cl-resp-ai-btn" data-titulo="${esc(titulo)}" data-descricao="${esc(descricao)}" onclick="window._gerarRespostaIA()">✨ Gerar com IA</button>`}
         </div>
         ${link ? `<a href="${esc(link)}" target="_blank" class="cl-resp-open-btn">🔗 Ver no Classroom</a>` : ''}`;
     } else {
@@ -852,10 +852,13 @@ window._entregarResposta = async function(courseId, cwId, subId, apenasRascunho)
 };
 
 // ─── IA: GERAR RESPOSTA PARA ATIVIDADE ───────────────────────────────────────
-window._gerarRespostaIA = async function(titulo, descricao) {
-  const textarea = document.getElementById('cl-resp-textarea');
+window._gerarRespostaIA = async function() {
   const aiBtn    = document.getElementById('cl-resp-ai-btn');
+  const textarea = document.getElementById('cl-resp-textarea');
   if (!textarea || !aiBtn) return;
+
+  const titulo   = aiBtn.dataset.titulo   || '';
+  const descricao = aiBtn.dataset.descricao || '';
 
   aiBtn.disabled = true;
   aiBtn.textContent = '⏳ Gerando...';
