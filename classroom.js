@@ -514,7 +514,10 @@ export async function renderPostsClassroom(token, targetEl, limit) {
       <div class="cl-posts-header">
         <span class="cl-posts-title">📚 Publicações do Classroom</span>
       </div>
-      <p class="cl-posts-empty">Erro ao carregar publicações. Tente sincronizar novamente.</p>`;
+      <div style="display:flex;align-items:center;gap:10px;padding:4px 0">
+        <p class="cl-posts-empty" style="margin:0">Erro ao carregar publicações.</p>
+        <button onclick="window._renderPostsClassroomDashboard?.()" style="padding:4px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:12px;cursor:pointer">↻ Tentar novamente</button>
+      </div>`;
   }
 }
 

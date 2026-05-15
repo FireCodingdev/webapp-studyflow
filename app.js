@@ -774,9 +774,17 @@ function renderDashboard() {
   const pendingTasks = STATE.tasks.filter(t => !t.done);
   const doneTasks   = STATE.tasks.filter(t => t.done);
   const exams       = pendingTasks.filter(t => t.type === 'exam' && t.deadline);
-  const upcomingTasks = [...pendingTasks]
+  const todayStr = now.toISOString().slice(0, 10);
+  const overdueTasks = [...pendingTasks]
+    .filter(t => t.deadline && t.deadline < todayStr)
+    .sort((a, b) => b.deadline < a.deadline ? -1 : 1)  // mais recentes primeiro
+    .slice(0, 2)
+    .map(t => ({ ...t, _overdue: true }));
+  const futureTasks = [...pendingTasks]
+    .filter(t => !t.deadline || t.deadline >= todayStr)
     .sort((a, b) => (a.deadline || '9999-12-31') < (b.deadline || '9999-12-31') ? -1 : 1)
     .slice(0, 3);
+  const upcomingTasks = [...overdueTasks, ...futureTasks];
 
   // ── Stats ──────────────────────────────────────────────
   document.getElementById('stat-classes').textContent = todayClasses.length;
@@ -850,6 +858,7 @@ function renderDashboard() {
   }
 
   // ── Progresso por matéria ──────────────────────────────
+  fixTaskSubjects();
   const subjProgEl = document.getElementById('db-subject-progress');
   const overallEl  = document.getElementById('db-overall-pct');
   if (subjProgEl) {
@@ -1188,10 +1197,11 @@ function renderTaskCard(task) {
         </div>
         <div class="task-content">
           <div class="task-title" style="${task.done ? 'text-decoration:line-through;color:var(--text2)' : ''}">${escapeHtml(task.title)}</div>
-          ${task.notes ? `<div style="font-size:12px;color:var(--text2);margin-top:3px">${escapeHtml(task.notes)}</div>` : ''}
+          ${task.notes ? `<div style="font-size:12px;color:var(--text2);margin-top:3px;white-space:pre-line">${escapeHtml(task.notes)}</div>` : ''}
           <div class="task-meta">
             ${task.subjectName ? `<span class="tag tag-subject" style="background:${getSubjectColor(task.subjectId, task.subjectName, task.subjectColor)}22;color:${getSubjectColor(task.subjectId, task.subjectName, task.subjectColor)}">${escapeHtml(task.subjectName)}</span>` : ''}
             ${task.type === 'exam' ? `<span class="tag tag-exam">${typeLabels[task.type]}</span>` : ''}
+            ${task._overdue ? `<span class="tag tag-deadline">ATRASADA</span>` : ''}
             ${deadlineLabel ? `<span class="tag ${isUrgent(task.deadline) ? 'tag-deadline' : 'tag-ok'}">${deadlineLabel}</span>` : ''}
           </div>
         </div>
