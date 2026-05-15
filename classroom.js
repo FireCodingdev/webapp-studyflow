@@ -253,7 +253,11 @@ async function getTokenValido(uid) {
 async function sincronizarSeConectado(uid) {
   try {
     const token = await getTokenValido(uid);
-    if (!token) return;
+    if (!token) {
+      // Sem token: mostra mensagem de "conecte o Classroom" no dashboard
+      window._renderPostsClassroomDashboard?.();
+      return;
+    }
     atualizarBotaoClassroom(true);
     await sincronizarClassroom(uid, token);
   } catch (err) {
@@ -311,6 +315,9 @@ async function sincronizarClassroom(uid, token) {
     } else {
       _hooks.showToast('✅ Classroom sincronizado — nenhuma novidade.');
     }
+
+    // Sempre atualiza os posts no dashboard, independente de novas atividades
+    window._renderPostsClassroomDashboard?.();
 
     await updateDoc(doc(db, 'users', uid), {
       'classroom.lastSync': new Date().toISOString(),
