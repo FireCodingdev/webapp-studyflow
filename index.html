@@ -209,13 +209,13 @@
             <div id="db-subject-progress" class="db-subject-progress"></div>
           </div>
 
-          <!-- Provas agendadas -->
+          <!-- Publicações do Classroom -->
           <div class="section-block">
             <div class="section-header">
-              <h3>Provas Agendadas</h3>
-              <button class="text-btn" onclick="navigateTo('tasks')">Ver todas</button>
+              <h3>Publicações do Classroom</h3>
+              <button class="text-btn" onclick="navigateTo('materials')">Ver todas</button>
             </div>
-            <div id="db-exams-list" class="db-exams-list"></div>
+            <div id="db-classroom-posts"></div>
           </div>
 
           <!-- Flashcards para revisar -->
@@ -255,6 +255,14 @@
         <div class="page-content">
           <div id="schedule-calendar"></div>
           <div id="schedule-day-classes" class="list-container mt-4"></div>
+          <!-- Provas agendadas no cronograma -->
+          <div class="section-block" id="schedule-exams-block" style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border)">
+            <div class="section-header">
+              <h3>Provas Agendadas</h3>
+              <button class="text-btn" onclick="navigateTo('tasks')">Ver todas</button>
+            </div>
+            <div id="schedule-exams-list"></div>
+          </div>
         </div>
         <button class="fab" onclick="openAddClass()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>

@@ -45,6 +45,23 @@ export function initClassroom(STATE, hooks) {
     if (token) renderPostsClassroom(token);
   };
 
+  // Renderiza posts compactos no dashboard
+  window._renderPostsClassroomDashboard = async () => {
+    const el = document.getElementById('db-classroom-posts');
+    if (!el) return;
+    const currentUid = auth.currentUser?.uid;
+    if (!currentUid) {
+      el.innerHTML = `<div class="db-empty-small">Conecte o Google Classroom nas configurações para ver as publicações aqui.</div>`;
+      return;
+    }
+    const token = await getTokenValido(currentUid);
+    if (!token) {
+      el.innerHTML = `<div class="db-empty-small">Conecte o Google Classroom nas configurações para ver as publicações aqui.</div>`;
+      return;
+    }
+    renderPostsClassroom(token, el, 5);
+  };
+
   // Expõe função de conexão para o painel de configurações
   window._conectarClassroom = async () => {
     const currentUid = auth.currentUser?.uid;
@@ -436,14 +453,17 @@ function injetarEstilosClassroom() {
 }
 
 // ─── POSTS DO CLASSROOM NA PÁGINA DE MATERIAIS ────────────────────────────────
-export async function renderPostsClassroom(token) {
-  let section = document.getElementById('classroom-posts-section');
+export async function renderPostsClassroom(token, targetEl, limit) {
+  let section = targetEl || null;
   if (!section) {
-    const linksList = document.getElementById('links-list');
-    if (!linksList) return;
-    section = document.createElement('div');
-    section.id = 'classroom-posts-section';
-    linksList.insertAdjacentElement('afterend', section);
+    section = document.getElementById('classroom-posts-section');
+    if (!section) {
+      const linksList = document.getElementById('links-list');
+      if (!linksList) return;
+      section = document.createElement('div');
+      section.id = 'classroom-posts-section';
+      linksList.insertAdjacentElement('afterend', section);
+    }
   }
 
   section.innerHTML = `
@@ -465,7 +485,7 @@ export async function renderPostsClassroom(token) {
     )).flat();
 
     todosPosts.sort((a, b) => new Date(b.creationTime) - new Date(a.creationTime));
-    const recentes = todosPosts.slice(0, 20);
+    const recentes = todosPosts.slice(0, limit || 20);
 
     if (recentes.length === 0) {
       section.innerHTML = `

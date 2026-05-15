@@ -880,59 +880,8 @@ function renderDashboard() {
     }
   }
 
-  // ── Provas agendadas ────────────────────────────────────
-  const examsEl = document.getElementById('db-exams-list');
-  if (examsEl) {
-    const todayD = new Date(); todayD.setHours(0,0,0,0);
-    // Apenas provas futuras ou de hoje (passadas somem da lista)
-    const upcoming = exams
-      .filter(e => {
-        const d = new Date(e.deadline + 'T00:00:00');
-        return d >= todayD;
-      })
-      .sort((a,b) => a.deadline.localeCompare(b.deadline));
-
-    if (upcoming.length === 0) {
-      examsEl.innerHTML = `<div class="db-empty-small">Nenhuma prova agendada</div>`;
-    } else {
-      examsEl.innerHTML = upcoming.map(e => {
-        const d = new Date(e.deadline + 'T00:00:00');
-        const diff = Math.round((d - todayD) / (1000*60*60*24));
-
-        const dateLabel = diff === 0 ? 'HOJE' : diff === 1 ? 'amanhã' :
-          d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' })
-           .replace(/\./g, '');
-
-        // Cor baseada no número/tipo da prova
-        const titleLower = (e.title || '').toLowerCase();
-        const subjectColor =
-          /final/i.test(titleLower)     ? '#222222' :
-          /prova\s*3/i.test(titleLower) ? '#e74c3c' :
-          /prova\s*2/i.test(titleLower) ? '#1e90ff' :
-          /prova\s*1/i.test(titleLower) ? '#2ed573' :
-          getSubjectColor(e.subjectId, e.subjectName, e.subjectColor);
-
-        const notesLine = e.notes
-          ? `<div class="exam-card-notes" style="color:${subjectColor}">${escapeHtml(e.notes)}</div>`
-          : '';
-
-        return `
-          <div class="cls-card">
-            <div class="cls-card-bar" style="background:${subjectColor}"></div>
-            <div class="cls-card-body">
-              <div class="cls-card-row">
-                <span class="cls-card-name">${escapeHtml(e.title)}</span>
-              </div>
-              <div class="cls-card-meta">
-                ${e.subjectName ? `<span class="cls-meta" style="color:${subjectColor};font-weight:600">${escapeHtml(e.subjectName)}</span>` : ''}
-                <span class="cls-meta cls-meta--dim" style="margin-left:auto">${dateLabel}</span>
-              </div>
-              ${notesLine}
-            </div>
-          </div>`;
-      }).join('');
-    }
-  }
+  // ── Publicações do Classroom (substituiu Provas Agendadas) ──────────────────
+  window._renderPostsClassroomDashboard?.();
 
   // ── Flashcards para revisar ────────────────────────────
   const fcEl = document.getElementById('db-flashcards-due');
@@ -1099,6 +1048,57 @@ function renderSchedule() {
         ${b.classes.map(cls => renderClassCard(cls, nowMin, sel, todayDow)).join('')}
       </div>
     `).join('');
+
+  // ── Provas agendadas no cronograma ───────────────────────
+  const schedExamsEl = document.getElementById('schedule-exams-list');
+  if (schedExamsEl) renderExamsList(schedExamsEl);
+}
+
+function renderExamsList(el) {
+  const exams = STATE.tasks.filter(t => t.type === 'exam' && !t.done);
+  const todayD = new Date(); todayD.setHours(0,0,0,0);
+  const upcoming = exams
+    .filter(e => new Date(e.deadline + 'T00:00:00') >= todayD)
+    .sort((a, b) => a.deadline.localeCompare(b.deadline));
+
+  if (upcoming.length === 0) {
+    el.innerHTML = `<div class="db-empty-small">Nenhuma prova agendada</div>`;
+    return;
+  }
+
+  el.innerHTML = upcoming.map(e => {
+    const d    = new Date(e.deadline + 'T00:00:00');
+    const diff = Math.round((d - todayD) / (1000*60*60*24));
+    const dateLabel = diff === 0 ? 'HOJE' : diff === 1 ? 'amanhã' :
+      d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' }).replace(/\./g, '');
+
+    const titleLower = (e.title || '').toLowerCase();
+    const subjectColor =
+      /final/i.test(titleLower)     ? '#aaaaaa' :
+      /prova\s*3/i.test(titleLower) ? '#e74c3c' :
+      /prova\s*2/i.test(titleLower) ? '#1e90ff' :
+      /prova\s*1/i.test(titleLower) ? '#2ed573' :
+      getSubjectColor(e.subjectId, e.subjectName, e.subjectColor);
+
+    const notesLine = e.notes
+      ? `<div class="exam-card-notes" style="color:${subjectColor}">${escapeHtml(e.notes)}</div>`
+      : '';
+
+    return `
+      <div class="cls-card">
+        <div class="cls-card-bar" style="background:${subjectColor}"></div>
+        <div class="cls-card-body">
+          <div class="cls-card-row">
+            <span class="cls-card-name">${escapeHtml(e.title)}</span>
+          </div>
+          <div class="cls-card-meta">
+            ${e.subjectName ? `<span class="cls-meta" style="color:${subjectColor};font-weight:600">${escapeHtml(e.subjectName)}</span>` : ''}
+            <span class="cls-meta cls-meta--dim" style="margin-left:auto">${dateLabel}</span>
+          </div>
+          ${notesLine}
+        </div>
+      </div>`;
+  }).join('');
 }
 
 function renderClassCard(cls, nowMinArg, selArg, todayArg) {
