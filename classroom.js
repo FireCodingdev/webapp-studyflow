@@ -519,7 +519,8 @@ export async function renderPostsClassroom(token, targetEl, limit) {
 }
 
 async function buscarPostsDaTurma(curso, token) {
-  const cor = encontrarCorTurma(curso.name);
+  const cor        = encontrarCorTurma(curso.name);
+  const nomeTurma  = limparNomeTurma(curso.name);   // nome limpo para exibição
 
   // 1. Avisos (announcements)
   const fetchAnnouncements = fetch(
@@ -529,9 +530,9 @@ async function buscarPostsDaTurma(curso, token) {
    .then(({ announcements = [] }) =>
      announcements.map(a => ({
        ...a,
-       _nomeTurma: curso.name,
+       _nomeTurma: nomeTurma,
        _corTurma:  cor,
-       _tipo:      'aviso',         // discriminator
+       _tipo:      'aviso',
      }))
    ).catch(() => []);
 
@@ -541,11 +542,10 @@ async function buscarPostsDaTurma(curso, token) {
     { headers: { Authorization: `Bearer ${token}` } }
   ).then(r => r.ok ? r.json() : { courseWorkMaterial: [] })
    .then(data => {
-     // A API retorna a chave "courseWorkMaterial" (singular) nesta rota
      const items = data.courseWorkMaterial || [];
      return items.map(m => ({
        ...m,
-       _nomeTurma: curso.name,
+       _nomeTurma: nomeTurma,
        _corTurma:  cor,
        _tipo:      'material',
        text:       m.description || m.title || '',
@@ -560,7 +560,7 @@ async function buscarPostsDaTurma(curso, token) {
    .then(({ courseWork = [] }) =>
      courseWork.map(cw => ({
        ...cw,
-       _nomeTurma: curso.name,
+       _nomeTurma: nomeTurma,
        _corTurma:  cor,
        _tipo:      'atividade',
        title:      cw.title || '',
@@ -572,11 +572,41 @@ async function buscarPostsDaTurma(curso, token) {
   return [...avisos, ...materiais, ...atividades];
 }
 
+function _normTurma(s) {
+  return String(s).toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 function encontrarCorTurma(nomeTurma) {
   if (!_STATE?.subjects?.length) return '#4285F4';
-  const turmaLower = nomeTurma.toLowerCase();
-  const match = _STATE.subjects.find(s => turmaLower.includes(s.name.toLowerCase()));
+  const match = _matchSubjectForTurma(nomeTurma);
   return match?.color || '#4285F4';
+}
+
+// Retorna a matéria correspondente à turma, ou null
+function _matchSubjectForTurma(nomeTurma) {
+  if (!_STATE?.subjects?.length) return null;
+  const turmaNorm = _normTurma(nomeTurma);
+  let best = null, bestScore = 0;
+  for (const s of _STATE.subjects) {
+    const words = _normTurma(s.name).split(' ').filter(w => w.length > 2);
+    if (!words.length) continue;
+    const hits = words.filter(w => turmaNorm.includes(w)).length;
+    const score = hits / words.length;
+    if (score > bestScore) { bestScore = score; best = s; }
+  }
+  return bestScore >= 0.35 ? best : null;
+}
+
+// Remove prefixo numérico e sufixos em parênteses do nome da turma
+function limparNomeTurma(nomeTurma) {
+  const match = _matchSubjectForTurma(nomeTurma);
+  if (match) return match.name;
+  return nomeTurma
+    .replace(/^\d+\s+/, '')        // remove "20261 " do início
+    .replace(/\s*\([^)]*\)/g, '')  // remove "(38388) (02.03.19.1.10)"
+    .trim();
 }
 
 function renderPostCard(post) {
