@@ -558,9 +558,9 @@ export async function renderTurmasTab(uid) {
 
   container.classList.remove('chat-active');
 
-  // Usa _inferProfileFromApp para pegar courseId mesmo que subjects não estejam salvos
+  // Usa inferAcademicProfile para pegar courseId mesmo que subjects não estejam salvos
   const saved   = await loadFullAcademicProfile(uid) || {};
-  const profile = _inferProfileFromApp(saved);
+  const profile = inferAcademicProfile(saved);
 
   if (!profile.courseId) {
     _renderOnboarding(container, uid);
@@ -656,7 +656,8 @@ window._enterTurma = async function(courseId, semester, period) {
   // Para turmas de outros períodos, usa o dado estático como fallback
   let subjectNames = course.subjects[semInt] || [];
   if (uid) {
-    const myProfile = await loadFullAcademicProfile(uid).catch(() => null);
+    const saved = await loadFullAcademicProfile(uid).catch(() => null);
+    const myProfile = inferAcademicProfile(saved || {});
     if (myProfile?.courseId === courseId && myProfile?.period === period && myProfile?.subjects?.length) {
       subjectNames = myProfile.subjects.map(s => s.name || s.nome || '').filter(Boolean);
     }
@@ -803,7 +804,7 @@ function _renderOnboarding(container, uid) {
 }
 
 // ── Inferir perfil a partir dos dados já existentes no app ───────────────────
-function _inferProfileFromApp(profile) {
+export function inferAcademicProfile(profile) {
   const facape = getFacapeData();
   const stateSubjects = window._STATE_subjects?.() || [];
 
@@ -862,7 +863,7 @@ window.openTurmasOnboarding = async function() {
   const uid = auth.currentUser?.uid;
   if (!uid) return;
   const saved = await loadFullAcademicProfile(uid) || {};
-  const profile = _inferProfileFromApp(saved);
+  const profile = inferAcademicProfile(saved);
 
   const courseOptions = FACAPE_COURSES.map(c =>
     `<option value="${c.id}" ${profile.courseId === c.id ? 'selected' : ''}>${esc(c.name)} (${c.tipo})</option>`

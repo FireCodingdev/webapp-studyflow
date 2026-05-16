@@ -7,7 +7,7 @@ import {
   collection, query, orderBy, limit, startAfter,
   onSnapshot, addDoc, serverTimestamp, where, getDocs, getDoc, doc, increment, updateDoc,
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-import { loadFullAcademicProfile, FACAPE_COURSES } from './turmas.js';
+import { loadFullAcademicProfile, inferAcademicProfile, FACAPE_COURSES } from './turmas.js';
 
 let _feedUnsubscribe   = null;
 let _lastTurmaDoc      = null;
@@ -19,7 +19,10 @@ export function initFeed() {
 }
 
 async function _getMyProfile(uid) {
-  try { return await loadFullAcademicProfile(uid); } catch { return null; }
+  try {
+    const saved = await loadFullAcademicProfile(uid);
+    return inferAcademicProfile(saved || {});
+  } catch { return null; }
 }
 
 // ── Skeleton loading ───────────────────────────────────────────────────────────
