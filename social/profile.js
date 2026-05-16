@@ -4,7 +4,6 @@
 
 import { db, auth } from '../firebase.js';
 import { getFacapeData } from '../facape.js';
-import { FACAPE_COURSES } from './turmas.js';
 
 // CORREÇÃO: import estático no lugar de top-level await
 import {
@@ -30,6 +29,7 @@ export async function saveAcademicProfile(uid, profileData) {
     }, { merge: true });
 
     // Espelha dados acadêmicos em user_profiles/{uid} para queries de descoberta
+    const { FACAPE_COURSES } = await import('./turmas.js');
     const courseMatch = FACAPE_COURSES.find(c =>
       c.name === profileData.course || c.id === profileData.course
     );
