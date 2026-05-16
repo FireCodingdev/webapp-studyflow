@@ -3,6 +3,7 @@
 // Não altera nenhuma função existente. Apenas adiciona novas.
 
 import { db, auth } from '../firebase.js';
+import { getFacapeData } from '../facape.js';
 
 // CORREÇÃO: import estático no lugar de top-level await
 import {
@@ -58,12 +59,41 @@ export async function loadSocialStats(uid) {
   }
 }
 
+// ---- Inferir dados acadêmicos do app (FACAPE + STATE) ----
+function _inferAcademicData(profile) {
+  const facape = getFacapeData();
+  const stateSubjects = window._STATE_subjects?.() || [];
+  const filled = { ...profile };
+
+  if (!filled.institution && facape) filled.institution = 'FACAPE – Faculdade de Petrolina';
+
+  if (!filled.course && facape?.curso) filled.course = facape.curso;
+
+  if (!filled.semester && facape?.periodo) {
+    const m = facape.periodo.match(/(\d+)/);
+    if (m) filled.semester = parseInt(m[1]);
+  }
+
+  if (!filled.period && facape?.periodo) {
+    const p = facape.periodo.toLowerCase();
+    if (p.includes('noturno'))      filled.period = 'noturno';
+    else if (p.includes('matutin')) filled.period = 'matutino';
+    else if (p.includes('vespert')) filled.period = 'vespertino';
+    else if (p.includes('integral')) filled.period = 'integral';
+  }
+
+  filled._fromFacape = !!(facape);
+  filled._facapeNome = facape?.nome || '';
+  filled._stateSubjectNames = stateSubjects.map(s => s.name || s.nome || '').filter(Boolean);
+
+  return filled;
+}
+
 // ---- Renderizar página de perfil no painel de conta (accs-sub-body) ----
 export async function renderAcademicProfileSection(uid) {
   const panel = document.getElementById('accs-sub-body');
   if (!panel) return;
 
-  // Loading state
   panel.innerHTML = `
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:40px 20px;color:rgba(255,255,255,0.4)">
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="animation:spin 1s linear infinite">
@@ -74,10 +104,18 @@ export async function renderAcademicProfileSection(uid) {
     <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>
   `;
 
-  const profile = await loadAcademicProfile(uid) || {};
+  const saved = await loadAcademicProfile(uid) || {};
+  const profile = _inferAcademicData(saved);
   const socialStats = await loadSocialStats(uid);
 
   const skillsList = (profile.skills || []).join(', ');
+  const autoSrc = profile._fromFacape ? 'Portal do Aluno FACAPE' : null;
+  const readonlyAttr = autoSrc ? 'readonly' : '';
+  const readonlyStyle = autoSrc
+    ? 'opacity:0.65;cursor:not-allowed;background:rgba(255,255,255,0.04);'
+    : '';
+
+  const periodLabel = { matutino:'Matutino', vespertino:'Vespertino', noturno:'Noturno', integral:'Integral', ead:'EaD' };
 
   panel.innerHTML = `
     <!-- Banner do perfil -->
@@ -108,27 +146,53 @@ export async function renderAcademicProfileSection(uid) {
     <!-- Formulário -->
     <div class="social-profile-form">
 
+      ${autoSrc ? `
+        <div style="background:rgba(108,99,255,0.12);border:1px solid rgba(108,99,255,0.3);border-radius:10px;padding:10px 12px;font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:4px">
+          🔗 Instituição, curso e semestre preenchidos automaticamente via <strong style="color:#a89dff">${escapeHtmlContent(autoSrc)}</strong>. Preencha apenas suas habilidades e bio.
+        </div>
+      ` : ''}
+
       <div class="accs-form-group">
         <label class="accs-label">Instituição</label>
         <input id="sp-institution" class="accs-input" type="text"
           placeholder="Ex: UFPE, USP, IFPE..."
-          value="${escapeForAttr(profile.institution || '')}">
+          value="${escapeForAttr(profile.institution || '')}"
+          ${readonlyAttr} style="${readonlyStyle}">
       </div>
 
       <div class="accs-form-group">
         <label class="accs-label">Curso</label>
         <input id="sp-course" class="accs-input" type="text"
           placeholder="Ex: Engenharia de Software"
-          value="${escapeForAttr(profile.course || '')}">
+          value="${escapeForAttr(profile.course || '')}"
+          ${readonlyAttr} style="${readonlyStyle}">
       </div>
 
-      <div class="accs-form-group">
-        <label class="accs-label">Semestre</label>
-        <input id="sp-semester" class="accs-input" type="number"
-          min="1" max="20" placeholder="1"
-          value="${profile.semester || 1}"
-          style="max-width:100px">
+      <div style="display:flex;gap:10px">
+        <div class="accs-form-group" style="flex:1">
+          <label class="accs-label">Semestre</label>
+          <input id="sp-semester" class="accs-input" type="number"
+            min="1" max="20" placeholder="1"
+            value="${profile.semester || 1}"
+            ${readonlyAttr} style="${readonlyStyle}max-width:100px">
+        </div>
+        ${profile.period ? `
+        <div class="accs-form-group" style="flex:1">
+          <label class="accs-label">Período</label>
+          <input class="accs-input" type="text"
+            value="${escapeForAttr(periodLabel[profile.period] || profile.period)}"
+            readonly style="${readonlyStyle}">
+        </div>` : ''}
       </div>
+
+      ${profile._stateSubjectNames?.length ? `
+        <div class="accs-form-group">
+          <label class="accs-label">Matérias detectadas</label>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0">
+            ${profile._stateSubjectNames.map(n => `<span class="accs-skill-tag" style="background:rgba(46,213,115,0.12);border-color:rgba(46,213,115,0.25);color:#2ed573">${escapeHtmlContent(n)}</span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
 
       <div class="accs-form-group">
         <label class="accs-label">Habilidades / Matérias destaque</label>
@@ -154,7 +218,6 @@ export async function renderAcademicProfileSection(uid) {
     </div>
   `;
 
-  // Preview de habilidades ao digitar
   const skillsInput = document.getElementById('sp-skills');
   if (skillsInput) {
     skillsInput.addEventListener('input', () => {

@@ -2538,6 +2538,11 @@ window.closeAccountSettings = function() {
   if (subBody) subBody.innerHTML = '';
 };
 
+window.openAcademicSettings = function() {
+  window.openAccountSettings();
+  requestAnimationFrame(() => window.openAccsSection('academic'));
+};
+
 window.openAccsSection = function(section) {
   const titles = {
     account: 'Conta',

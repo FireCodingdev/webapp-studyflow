@@ -573,7 +573,7 @@ export async function renderTurmasTab(uid) {
         <span class="turmas-inst">${esc(FACAPE_DISPLAY_NAME)}</span>
         <span class="turmas-course">${esc(profile.course)} · ${profile.semester}º sem · ${esc(periodLabel[profile.period] || profile.period)}</span>
       </div>
-      <button class="turmas-edit-btn" onclick="window.openTurmasOnboarding()">✏️ Editar</button>
+      <button class="turmas-edit-btn" onclick="window.openAcademicSettings()">✏️ Editar</button>
     </div>
     <div class="turmas-rooms-list" id="turmas-rooms-list">
       <div class="turmas-loading">⏳ Carregando suas turmas...</div>
@@ -586,7 +586,7 @@ export async function renderTurmasTab(uid) {
 
   if (!rooms.length) {
     listEl.innerHTML = `<div class="turmas-empty">Nenhuma turma encontrada.
-      <button class="btn-link" onclick="window.openTurmasOnboarding()">Adicionar matérias</button>
+      <button class="btn-link" onclick="window.openAcademicSettings()">Adicionar matérias</button>
     </div>`;
     return;
   }
@@ -629,7 +629,7 @@ function _renderOnboarding(container, uid) {
       <div class="turmas-onboarding-icon">🎓</div>
       <h3 class="turmas-onboarding-title">Configure seu Perfil Acadêmico</h3>
       <p class="turmas-onboarding-desc">Informe sua faculdade e matérias para interagir com seus colegas de turma.</p>
-      <button class="btn-primary turmas-onboarding-btn" onclick="window.openTurmasOnboarding()">
+      <button class="btn-primary turmas-onboarding-btn" onclick="window.openAcademicSettings()">
         Configurar agora
       </button>
     </div>
