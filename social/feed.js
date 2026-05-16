@@ -50,7 +50,13 @@ export async function renderFeed() {
 
   if (_feedUnsubscribe) { _feedUnsubscribe(); _feedUnsubscribe = null; }
 
-  const user = auth.currentUser;
+  // Aguarda auth se ainda não inicializou (firebase pode estar restaurando sessão)
+  let user = auth.currentUser;
+  if (!user) {
+    user = await new Promise(resolve => {
+      const unsub = auth.onAuthStateChanged(u => { unsub(); resolve(u); });
+    });
+  }
   if (!user) {
     container.innerHTML = `<p class="feed-empty">Faça login para ver o feed.</p>`;
     return;
@@ -263,10 +269,6 @@ export async function publishPost({ type, content, subjectId, visibility, imageF
 
 // ── Modal: novo post ──────────────────────────────────────────────────────────
 window.openNewPostModal = async function() {
-  const overlay = document.getElementById('modal-overlay');
-  const body    = document.getElementById('modal-body');
-  if (!overlay || !body) return;
-
   const user = auth.currentUser;
   if (!user) return;
 
@@ -281,10 +283,8 @@ window.openNewPostModal = async function() {
 
   const typeColors = { doubt:'#f39c12', material:'#4a9eff', achievement:'#2ed573', flashcard:'#a29bfe' };
 
-  body.innerHTML = `
-    <div class="modal-header"><h3>📝 Novo Post</h3></div>
+  const bodyHtml = `
     <div class="modal-form">
-
       <div class="form-group">
         <label class="form-label">Tipo</label>
         <div class="post-type-grid" id="post-type-grid">
@@ -331,8 +331,8 @@ window.openNewPostModal = async function() {
       <button class="btn-primary" onclick="window.submitNewPost()">🚀 Publicar</button>
     </div>
   `;
-  overlay.classList.add('active');
-  document.getElementById('modal-container')?.classList.add('active');
+
+  window.openModal('📝 Novo Post', bodyHtml);
 };
 
 window._selectPostType = function(btn) {
