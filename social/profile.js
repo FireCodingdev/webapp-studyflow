@@ -4,55 +4,68 @@
 
 import { db, auth } from '../firebase.js';
 import { getFacapeData } from '../facape.js';
+import { FACAPE_COURSES } from './turmas.js';
 
-// CORREÇÃO: import estático no lugar de top-level await
 import {
-  doc, getDoc, setDoc, collection, query, where, getDocs, limit
+  doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, limit
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ---- Salvar perfil acadêmico público no Firestore ----
 export async function saveAcademicProfile(uid, profileData) {
+  const courseMatch = FACAPE_COURSES.find(c =>
+    c.name === profileData.course || c.id === profileData.courseId
+  );
+  const courseId    = profileData.courseId   || courseMatch?.id    || '';
+  const courseSigla = profileData.courseSigla || courseMatch?.sigla || '';
+
+  // 1. Operação crítica — subcoleção academic
   try {
     await setDoc(doc(db, 'users', uid, 'profile', 'academic'), {
       institution: profileData.institution || '',
-      course: profileData.course || '',
-      semester: profileData.semester || 1,
-      skills: profileData.skills || [],
-      bio: profileData.bio || '',
-      projects: profileData.projects || [],
-      updatedAt: new Date().toISOString(),
-    }, { merge: true });
-
-    // Atualiza também contadores sociais (inicializa se não existir)
-    await setDoc(doc(db, 'users', uid), {
-      social: { followers: 0, following: 0, reputation: 0 },
-    }, { merge: true });
-
-    // Espelha dados acadêmicos em user_profiles/{uid} para queries de descoberta
-    const { FACAPE_COURSES } = await import('./turmas.js');
-    const courseMatch = FACAPE_COURSES.find(c =>
-      c.name === profileData.course || c.id === profileData.course
-    );
-    const courseId   = courseMatch?.id   || profileData.courseId   || '';
-    const courseSigla = courseMatch?.sigla || profileData.courseSigla || '';
-    const displayName = auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || '';
-
-    await setDoc(doc(db, 'user_profiles', uid), {
-      institution:  profileData.institution || '',
-      course:       profileData.course      || '',
+      course:      profileData.course      || '',
       courseId,
       courseSigla,
-      semester:     profileData.semester    || 1,
-      period:       profileData.period      || '',
-      displayName,
-      updatedAt:    new Date().toISOString(),
+      semester:    profileData.semester    || 1,
+      period:      profileData.period      || '',
+      skills:      profileData.skills      || [],
+      bio:         profileData.bio         || '',
+      projects:    profileData.projects    || [],
+      updatedAt:   new Date().toISOString(),
     }, { merge: true });
-
-    return true;
   } catch (err) {
-    console.error('[profile] Erro ao salvar perfil acadêmico:', err);
+    console.error('[profile] Erro ao salvar subcoleção academic:', err.code, err.message);
     return false;
   }
+
+  // 2. Inicializa contadores sociais — não-fatal
+  try {
+    const userRef = doc(db, 'users', uid);
+    const snap = await getDoc(userRef);
+    if (!snap.exists() || !snap.data()?.social) {
+      await updateDoc(userRef, { 'social.followers': 0, 'social.following': 0, 'social.reputation': 0 });
+    }
+  } catch (err) {
+    console.warn('[profile] Social stats não inicializados (não-fatal):', err.code);
+  }
+
+  // 3. Espelha em user_profiles para queries de descoberta — não-fatal
+  try {
+    const displayName = auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || '';
+    await setDoc(doc(db, 'user_profiles', uid), {
+      institution: profileData.institution || '',
+      course:      profileData.course      || '',
+      courseId,
+      courseSigla,
+      semester:    profileData.semester    || 1,
+      period:      profileData.period      || '',
+      displayName,
+      updatedAt:   new Date().toISOString(),
+    }, { merge: true });
+  } catch (err) {
+    console.warn('[profile] Espelho user_profiles falhou (não-fatal):', err.code, err.message);
+  }
+
+  return true;
 }
 
 // ---- Carregar perfil acadêmico de um usuário ----
@@ -96,10 +109,16 @@ function _inferAcademicData(profile) {
 
   if (!filled.period && facape?.periodo) {
     const p = facape.periodo.toLowerCase();
-    if (p.includes('noturno'))      filled.period = 'noturno';
-    else if (p.includes('matutin')) filled.period = 'matutino';
-    else if (p.includes('vespert')) filled.period = 'vespertino';
+    if (p.includes('noturno'))       filled.period = 'noturno';
+    else if (p.includes('matutin'))  filled.period = 'matutino';
+    else if (p.includes('vespert'))  filled.period = 'vespertino';
     else if (p.includes('integral')) filled.period = 'integral';
+  }
+
+  // Resolve courseId/courseSigla a partir do nome do curso
+  if (!filled.courseId && filled.course) {
+    const match = FACAPE_COURSES.find(c => c.name === filled.course);
+    if (match) { filled.courseId = match.id; filled.courseSigla = match.sigla; }
   }
 
   filled._fromFacape = !!(facape);
@@ -171,7 +190,9 @@ export async function renderAcademicProfileSection(uid) {
           value="${escapeForAttr(course)}"
           placeholder="Sincronize com o Portal do Aluno"
           readonly style="${roStyle}">
-        <input type="hidden" id="sp-course" value="${escapeForAttr(course)}">
+        <input type="hidden" id="sp-course"     value="${escapeForAttr(course)}">
+        <input type="hidden" id="sp-courseId"   value="${escapeForAttr(profile.courseId || '')}">
+        <input type="hidden" id="sp-courseSigla" value="${escapeForAttr(profile.courseSigla || '')}">
       </div>
 
       <div style="display:flex;gap:10px">
@@ -223,17 +244,16 @@ window.saveAcademicProfileUI = async function() {
   const btn = document.querySelector('.accs-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando...'; }
 
-  const skills = (document.getElementById('sp-skills')?.value || '')
-    .split(',').map(s => s.trim()).filter(Boolean);
-
   const profileData = {
-    institution: document.getElementById('sp-institution')?.value?.trim() || '',
-    course:      document.getElementById('sp-course')?.value?.trim() || '',
-    semester:    parseInt(document.getElementById('sp-semester')?.value) || 1,
-    period:      document.getElementById('sp-period')?.value?.trim() || '',
-    skills,
-    bio:         document.getElementById('sp-bio')?.value?.trim() || '',
-    projects:    [],
+    institution:  document.getElementById('sp-institution')?.value?.trim()  || '',
+    course:       document.getElementById('sp-course')?.value?.trim()       || '',
+    courseId:     document.getElementById('sp-courseId')?.value?.trim()     || '',
+    courseSigla:  document.getElementById('sp-courseSigla')?.value?.trim()  || '',
+    semester:     parseInt(document.getElementById('sp-semester')?.value)   || 1,
+    period:       document.getElementById('sp-period')?.value?.trim()       || '',
+    skills:       [],
+    bio:          document.getElementById('sp-bio')?.value?.trim()          || '',
+    projects:     [],
   };
 
   const ok = await saveAcademicProfile(user.uid, profileData);
