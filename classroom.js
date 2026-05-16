@@ -9,6 +9,8 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  getDocs,
+  collection,
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ─── CONFIGURAÇÃO ─────────────────────────────────────────────────────────────
@@ -27,6 +29,70 @@ const CLASSROOM_TOKEN_FUNCTION = 'https://classroomtoken-xesxvi757a-uc.a.run.app
 // ─── ESTADO INTERNO ───────────────────────────────────────────────────────────
 let _STATE = null;
 let _hooks  = null;
+
+// ─── CACHE LOCAL DE SUBMISSÕES (para não perder status "Entregue" entre renders) ──
+// Firestore: users/{uid}/classroomSubmissions/{cwId} = { state, courseId, updatedAt }
+// Estados relevantes: 'TURNED_IN' | 'RETURNED' | 'NEW' | 'CREATED'
+
+async function _saveSubmissionStatus(uid, cwId, state, courseId) {
+  try {
+    await setDoc(doc(db, 'users', uid, 'classroomSubmissions', cwId), {
+      state, courseId: courseId || '', updatedAt: new Date().toISOString(),
+    });
+  } catch { /* best-effort */ }
+}
+
+async function _loadSubmissionCache(uid) {
+  try {
+    const snap = await getDocs(collection(db, 'users', uid, 'classroomSubmissions'));
+    const map = new Map();
+    snap.docs.forEach(d => map.set(d.id, d.data()));
+    return map;
+  } catch { return new Map(); }
+}
+
+async function _fetchSubmissionState(token, courseId, cwId) {
+  try {
+    const res = await fetch(
+      `https://classroom.googleapis.com/v1/courses/${courseId}/courseWork/${cwId}/studentSubmissions?userId=me`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data.studentSubmissions || [])[0]?.state || null;
+  } catch { return null; }
+}
+
+// Verifica em background as atividades sem status cacheado e atualiza o DOM + cache
+async function _refreshUncachedSubmissions(uid, token, atividades, cache) {
+  const uncached = atividades.filter(p => {
+    const cached = cache.get(p.id);
+    return !cached || (cached.state !== 'TURNED_IN' && cached.state !== 'RETURNED');
+  });
+  if (!uncached.length) return;
+
+  await Promise.all(uncached.map(async (p) => {
+    const state = await _fetchSubmissionState(token, p._courseId, p.id);
+    if (!state) return;
+    const isTurnedIn = state === 'TURNED_IN' || state === 'RETURNED';
+    await _saveSubmissionStatus(uid, p.id, state, p._courseId);
+    if (isTurnedIn) _marcarCardEntregueDOM(p.id);
+  }));
+}
+
+// Atualiza o card no DOM sem precisar re-renderizar toda a lista
+function _marcarCardEntregueDOM(cwId) {
+  const respBtn = document.querySelector(`.cl-responder-btn[data-cw-id="${cwId}"]`);
+  if (!respBtn) return;
+  const card = respBtn.closest('.cl-post-card');
+  respBtn.remove();
+  if (!card) return;
+  const dueEl = card.querySelector('.cl-post-due');
+  if (dueEl) {
+    dueEl.innerHTML = '✅ Entregue!';
+    dueEl.style.cssText = 'color:#2ed573;background:rgba(46,213,115,0.1);border:1px solid rgba(46,213,115,0.25);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;margin-bottom:8px;display:inline-flex;align-items:center;gap:6px';
+  }
+}
 
 // ─── PONTO DE ENTRADA ─────────────────────────────────────────────────────────
 export function initClassroom(STATE, hooks) {
@@ -471,7 +537,6 @@ function injetarEstilosClassroom() {
 
 // ─── POSTS DO CLASSROOM NA PÁGINA DE MATERIAIS ────────────────────────────────
 export async function renderPostsClassroom(token, targetEl, limit) {
-  // Sempre requer um targetEl explícito — não injeta mais na página de Materiais
   const section = targetEl;
   if (!section) return;
 
@@ -482,10 +547,17 @@ export async function renderPostsClassroom(token, targetEl, limit) {
     </div>`;
 
   try {
-    const cursosRes = await fetch(
-      'https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE&pageSize=20',
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    const uid = auth.currentUser?.uid;
+
+    // Carrega cache de submissões e posts da API em paralelo
+    const [submissionCache, cursosRes] = await Promise.all([
+      uid ? _loadSubmissionCache(uid) : Promise.resolve(new Map()),
+      fetch(
+        'https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE&pageSize=20',
+        { headers: { Authorization: `Bearer ${token}` } }
+      ),
+    ]);
+
     if (!cursosRes.ok) throw new Error(`${cursosRes.status}`);
     const { courses = [] } = await cursosRes.json();
 
@@ -505,12 +577,23 @@ export async function renderPostsClassroom(token, targetEl, limit) {
       return;
     }
 
+    // Renderiza com status do cache (sem chamar API extra)
     section.innerHTML = `
       <div class="cl-posts-header">
         <span class="cl-posts-title">📚 Publicações do Classroom</span>
         <span class="cl-posts-count">${recentes.length} publicaç${recentes.length > 1 ? 'ões' : 'ão'}</span>
       </div>
-      ${recentes.map(renderPostCard).join('')}`;
+      ${recentes.map(p => {
+        const cached = submissionCache.get(p.id);
+        const isTurnedIn = cached?.state === 'TURNED_IN' || cached?.state === 'RETURNED';
+        return renderPostCard(p, isTurnedIn);
+      }).join('')}`;
+
+    // Verifica em background atividades sem status no cache e atualiza o DOM se necessário
+    if (uid) {
+      const atividades = recentes.filter(p => p._tipo === 'atividade');
+      _refreshUncachedSubmissions(uid, token, atividades, submissionCache).catch(() => {});
+    }
 
   } catch (err) {
     console.error('[Classroom] Erro ao buscar posts:', err);
@@ -626,7 +709,8 @@ function _formatDueDate(dueDate, dueTime) {
   return `${dateStr}, ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
 
-function renderPostCard(post) {
+function renderPostCard(post, isTurnedIn = false) {
+  post._isTurnedIn = isTurnedIn;
   const dataISO = post.updateTime || post.creationTime || null;
   const data = dataISO
     ? new Date(dataISO).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
@@ -639,9 +723,11 @@ function renderPostCard(post) {
 
   // Due date (apenas para atividades com dueDate definida)
   const dueDateStr = tipo === 'atividade' ? _formatDueDate(post.dueDate, post.dueTime) : '';
-  const dueDateHtml = dueDateStr
-    ? `<div class="cl-post-due"><span class="cl-post-due-icon">⏰</span> Entrega: <strong>${dueDateStr}</strong></div>`
-    : '';
+  const dueDateHtml = tipo !== 'atividade' ? '' : isTurnedIn
+    ? `<div class="cl-post-due" style="color:#2ed573;background:rgba(46,213,115,0.1);border:1px solid rgba(46,213,115,0.25);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;margin-bottom:8px;display:inline-flex;align-items:center;gap:6px">✅ Entregue!</div>`
+    : dueDateStr
+      ? `<div class="cl-post-due"><span class="cl-post-due-icon">⏰</span> Entrega: <strong>${dueDateStr}</strong></div>`
+      : '';
 
   const links = (post.materials || [])
     .map(m => {
@@ -685,7 +771,7 @@ function renderPostCard(post) {
 
   const isAtividade = tipo === 'atividade';
   const alternateLinkPost = post.alternateLink || '';
-  const responderBtn = isAtividade ? `
+  const responderBtn = isAtividade && !post._isTurnedIn ? `
     <button class="cl-responder-btn" onclick="window._abrirModalResponder(this)"
       data-course-id="${esc(post._courseId || post.courseId || '')}"
       data-cw-id="${esc(post.id || '')}"
@@ -842,6 +928,10 @@ window._entregarResposta = async function(courseId, cwId, subId, apenasRascunho)
           `https://classroom.googleapis.com/v1/courses/${courseId}/courseWork/${cwId}/studentSubmissions/${subId}:turnIn`,
           { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: '{}' }
         );
+        // Persiste status no Firestore para que o card não volte ao estado "aberto"
+        const uid = auth.currentUser?.uid;
+        if (uid) await _saveSubmissionStatus(uid, cwId, 'TURNED_IN', courseId);
+
         const body = document.getElementById('cl-resp-body');
         if (body) body.innerHTML = `<div class="cl-resp-status delivered">✅ Atividade entregue com sucesso!</div>`;
         window._marcarAtividadeEntregue(cwId);
@@ -859,16 +949,7 @@ window._entregarResposta = async function(courseId, cwId, subId, apenasRascunho)
 
 // ─── MARCAR CARD COMO ENTREGUE ───────────────────────────────────────────────
 window._marcarAtividadeEntregue = function(cwId) {
-  const respBtn = document.querySelector(`.cl-responder-btn[data-cw-id="${cwId}"]`);
-  if (!respBtn) return;
-  const card = respBtn.closest('.cl-post-card');
-  respBtn.remove();
-  if (!card) return;
-  const dueEl = card.querySelector('.cl-post-due');
-  if (dueEl) {
-    dueEl.innerHTML = '✅ Entregue!';
-    dueEl.style.cssText = 'color:#2ed573;background:rgba(46,213,115,0.1);border:1px solid rgba(46,213,115,0.25);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;margin-bottom:8px;display:inline-flex;align-items:center;gap:6px';
-  }
+  _marcarCardEntregueDOM(cwId);
 };
 
 // ─── IA: GERAR RESPOSTA PARA ATIVIDADE ───────────────────────────────────────
