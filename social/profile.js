@@ -126,106 +126,82 @@ export async function renderAcademicProfileSection(uid) {
 
   const saved = await loadAcademicProfile(uid) || {};
   const profile = _inferAcademicData(saved);
-  const socialStats = await loadSocialStats(uid);
 
-  const skillsList = (profile.skills || []).join(', ');
-  const autoSrc = profile._fromFacape ? 'Portal do Aluno FACAPE' : null;
-  const readonlyAttr = autoSrc ? 'readonly' : '';
-  const readonlyStyle = autoSrc
-    ? 'opacity:0.65;cursor:not-allowed;background:rgba(255,255,255,0.04);'
-    : '';
+  const PERIOD_LABELS = { matutino:'Matutino', vespertino:'Vespertino', noturno:'Noturno', integral:'Integral', ead:'EaD' };
+  const hasFacape   = profile._fromFacape;
+  const institution = 'FACAPE – Faculdade de Petrolina';
+  const course      = profile.course    || '';
+  const semester    = profile.semester  || '';
+  const period      = profile.period    || '';
+  const periodStr   = PERIOD_LABELS[period] || period;
+  const subjects    = profile._stateSubjectNames || [];
 
-  const periodLabel = { matutino:'Matutino', vespertino:'Vespertino', noturno:'Noturno', integral:'Integral', ead:'EaD' };
+  const roStyle = 'opacity:0.6;cursor:not-allowed;background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.08);';
 
   panel.innerHTML = `
-    <!-- Banner do perfil -->
     <div class="accs-academic-banner">
       <div class="accs-academic-banner-icon">🎓</div>
       <div class="accs-academic-banner-info">
-        <div class="accs-academic-banner-title">${escapeHtmlContent(profile.institution || 'Perfil Acadêmico')}</div>
-        <div class="accs-academic-banner-sub">${escapeHtmlContent(profile.course || 'Configure sua instituição e curso abaixo')}</div>
+        <div class="accs-academic-banner-title">${institution}</div>
+        <div class="accs-academic-banner-sub">${escapeHtmlContent(course || 'Conecte-se ao Portal do Aluno')}</div>
       </div>
     </div>
 
-    <!-- Stats rápidas -->
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-      <div style="background:#2c2c2e;border-radius:12px;padding:12px;text-align:center">
-        <div style="font-size:20px;font-weight:800;color:#6c63ff">${socialStats.followers || 0}</div>
-        <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:2px">Seguidores</div>
-      </div>
-      <div style="background:#2c2c2e;border-radius:12px;padding:12px;text-align:center">
-        <div style="font-size:20px;font-weight:800;color:#2ed573">${profile.semester || '—'}</div>
-        <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:2px">Semestre</div>
-      </div>
-      <div style="background:#2c2c2e;border-radius:12px;padding:12px;text-align:center">
-        <div style="font-size:20px;font-weight:800;color:#ffa502">${(profile.skills || []).length}</div>
-        <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:2px">Habilidades</div>
-      </div>
-    </div>
-
-    <!-- Formulário -->
     <div class="social-profile-form">
 
-      ${autoSrc ? `
-        <div style="background:rgba(108,99,255,0.12);border:1px solid rgba(108,99,255,0.3);border-radius:10px;padding:10px 12px;font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:4px">
-          🔗 Instituição, curso e semestre preenchidos automaticamente via <strong style="color:#a89dff">${escapeHtmlContent(autoSrc)}</strong>. Preencha apenas suas habilidades e bio.
+      ${hasFacape ? `
+        <div style="background:rgba(46,213,115,0.08);border:1px solid rgba(46,213,115,0.25);border-radius:10px;padding:10px 14px;font-size:12px;color:rgba(255,255,255,0.6);display:flex;align-items:center;gap:8px">
+          ✅ <span>Dados preenchidos via <strong style="color:#2ed573">Portal do Aluno FACAPE</strong></span>
         </div>
-      ` : ''}
+      ` : `
+        <div style="background:rgba(255,165,0,0.08);border:1px solid rgba(255,165,0,0.25);border-radius:10px;padding:10px 14px;font-size:12px;color:rgba(255,255,255,0.6);display:flex;align-items:center;gap:8px">
+          ⚠️ <span>Conecte-se ao <strong style="color:#ffa502">Portal do Aluno FACAPE</strong> para preencher automaticamente.</span>
+        </div>
+      `}
 
       <div class="accs-form-group">
         <label class="accs-label">Instituição</label>
-        <input id="sp-institution" class="accs-input" type="text"
-          placeholder="Ex: UFPE, USP, IFPE..."
-          value="${escapeForAttr(profile.institution || '')}"
-          ${readonlyAttr} style="${readonlyStyle}">
+        <input class="accs-input" type="text" value="${institution}" readonly style="${roStyle}">
+        <input type="hidden" id="sp-institution" value="${institution}">
       </div>
 
       <div class="accs-form-group">
         <label class="accs-label">Curso</label>
-        <input id="sp-course" class="accs-input" type="text"
-          placeholder="Ex: Engenharia de Software"
-          value="${escapeForAttr(profile.course || '')}"
-          ${readonlyAttr} style="${readonlyStyle}">
+        <input class="accs-input" type="text"
+          value="${escapeForAttr(course)}"
+          placeholder="Sincronize com o Portal do Aluno"
+          readonly style="${roStyle}">
+        <input type="hidden" id="sp-course" value="${escapeForAttr(course)}">
       </div>
 
       <div style="display:flex;gap:10px">
         <div class="accs-form-group" style="flex:1">
           <label class="accs-label">Semestre</label>
-          <input id="sp-semester" class="accs-input" type="number"
-            min="1" max="20" placeholder="1"
-            value="${profile.semester || 1}"
-            ${readonlyAttr} style="${readonlyStyle}max-width:100px">
+          <input class="accs-input" type="text"
+            value="${semester ? semester + 'º' : ''}" placeholder="—"
+            readonly style="${roStyle}">
+          <input type="hidden" id="sp-semester" value="${semester}">
         </div>
-        ${profile.period ? `
         <div class="accs-form-group" style="flex:1">
           <label class="accs-label">Período</label>
           <input class="accs-input" type="text"
-            value="${escapeForAttr(periodLabel[profile.period] || profile.period)}"
-            readonly style="${readonlyStyle}">
-        </div>` : ''}
+            value="${escapeForAttr(periodStr)}" placeholder="—"
+            readonly style="${roStyle}">
+          <input type="hidden" id="sp-period" value="${escapeForAttr(period)}">
+        </div>
       </div>
 
-      ${profile._stateSubjectNames?.length ? `
+      ${subjects.length ? `
         <div class="accs-form-group">
-          <label class="accs-label">Matérias detectadas</label>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0">
-            ${profile._stateSubjectNames.map(n => `<span class="accs-skill-tag" style="background:rgba(46,213,115,0.12);border-color:rgba(46,213,115,0.25);color:#2ed573">${escapeHtmlContent(n)}</span>`).join('')}
+          <label class="accs-label">Matérias do semestre</label>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0">
+            ${subjects.map(n => `<span class="accs-skill-tag" style="background:rgba(46,213,115,0.12);border-color:rgba(46,213,115,0.25);color:#2ed573">${escapeHtmlContent(n)}</span>`).join('')}
           </div>
         </div>
       ` : ''}
 
       <div class="accs-form-group">
-        <label class="accs-label">Habilidades / Matérias destaque</label>
-        <input id="sp-skills" class="accs-input" type="text"
-          placeholder="Ex: Python, Cálculo, UX (separado por vírgula)"
-          value="${escapeForAttr(skillsList)}">
-        <div class="accs-skills-preview" id="sp-skills-preview">
-          ${(profile.skills || []).map(s => `<span class="accs-skill-tag">${escapeHtmlContent(s)}</span>`).join('')}
-        </div>
-      </div>
-
-      <div class="accs-form-group">
-        <label class="accs-label">Bio Acadêmica</label>
+        <label class="accs-label">Bio Acadêmica <span style="font-size:11px;color:rgba(255,255,255,0.35)">(opcional)</span></label>
         <textarea id="sp-bio" class="accs-input" rows="3"
           placeholder="Conte sobre seus interesses e objetivos acadêmicos...">${escapeHtmlContent(profile.bio || '')}</textarea>
       </div>
@@ -237,17 +213,6 @@ export async function renderAcademicProfileSection(uid) {
       <div id="sp-feedback"></div>
     </div>
   `;
-
-  const skillsInput = document.getElementById('sp-skills');
-  if (skillsInput) {
-    skillsInput.addEventListener('input', () => {
-      const tags = skillsInput.value.split(',').map(s => s.trim()).filter(Boolean);
-      const preview = document.getElementById('sp-skills-preview');
-      if (preview) {
-        preview.innerHTML = tags.map(s => `<span class="accs-skill-tag">${escapeHtmlContent(s)}</span>`).join('');
-      }
-    });
-  }
 }
 
 // ---- Handler chamado pelo onclick do botão salvar ----
@@ -265,6 +230,7 @@ window.saveAcademicProfileUI = async function() {
     institution: document.getElementById('sp-institution')?.value?.trim() || '',
     course:      document.getElementById('sp-course')?.value?.trim() || '',
     semester:    parseInt(document.getElementById('sp-semester')?.value) || 1,
+    period:      document.getElementById('sp-period')?.value?.trim() || '',
     skills,
     bio:         document.getElementById('sp-bio')?.value?.trim() || '',
     projects:    [],
