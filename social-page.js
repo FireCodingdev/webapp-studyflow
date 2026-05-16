@@ -4,7 +4,12 @@
 
 window._renderSocialPage = async function() {
   const { auth } = await import('./firebase.js');
-  const user = auth.currentUser;
+
+  // Aguarda o Firebase restaurar a sessão antes de verificar o usuário
+  const user = await new Promise(resolve => {
+    if (auth.currentUser !== null) { resolve(auth.currentUser); return; }
+    const unsub = auth.onAuthStateChanged(u => { unsub(); resolve(u); });
+  });
   if (!user) return;
 
   const { renderDiscoverSection } = await import('./social/connections.js');
