@@ -71,6 +71,7 @@ const STATE = {
   taskFilter: 'all',
   flashcardFilter: 'all',
   currentUser: null,
+  avatarUrl: null,
   isOnline: navigator.onLine,
   pendingSync: false,
 };
@@ -286,11 +287,21 @@ async function initAppForUser(user) {
   if (avatarEl) avatarEl.textContent = initials;
   if (nameEl) nameEl.textContent = name;
 
-  // Restore cached avatar photo if available
-  const cachedPhoto = localStorage.getItem('accs_avatar_' + user.uid);
-  if (cachedPhoto && avatarEl) {
-    avatarEl.innerHTML = `<img src="${cachedPhoto}" style="width:100%;height:100%;border-radius:50%;object-fit:cover" alt="avatar">`;
-  }
+  // Avatar: 1. Firestore  2. migração de localStorage  3. iniciais (já renderizadas acima)
+  (async () => {
+    try {
+      const { getDoc: _gd, doc: _d } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const snap = await _gd(_d(db, 'users', user.uid, 'profile', 'main'));
+      const url  = snap.exists() ? snap.data()?.avatarUrl : null;
+      if (url) {
+        STATE.avatarUrl = url;
+        _setAvatarImg(url);
+      } else {
+        const cached = localStorage.getItem('accs_avatar_' + user.uid);
+        if (cached) _migrateAvatarFromLocalStorage(user.uid, cached);
+      }
+    } catch (_) {}
+  })();
 
   // Sincroniza perfil público (carrega username do Firestore e salva nome)
   try {
@@ -2450,8 +2461,8 @@ window.openAccountSettings = function() {
   // Update header info
   const avatarEl = document.getElementById('accs-avatar');
   if (avatarEl) {
-    if (user.photoURL) {
-      avatarEl.innerHTML = `<img src="${user.photoURL}" alt="avatar">`;
+    if (STATE.avatarUrl) {
+      avatarEl.innerHTML = `<img src="${STATE.avatarUrl}" style="width:100%;height:100%;border-radius:50%;object-fit:cover" alt="avatar">`;
     } else {
       avatarEl.textContent = initials;
     }
@@ -3070,27 +3081,90 @@ window.resetAllData = async function() {
   initClassroom(STATE, { save, renderTasks, renderDashboard, showToast });
 };
 
+// ─── AVATAR HELPERS ───────────────────────────────────────────────────────────
+function _setAvatarImg(url) {
+  const style = 'width:100%;height:100%;border-radius:50%;object-fit:cover';
+  const html  = `<img src="${url}" style="${style}" alt="avatar">`;
+  const sidebar = document.getElementById('sidebar-avatar');
+  const accs    = document.getElementById('accs-avatar');
+  if (sidebar) sidebar.innerHTML = html;
+  if (accs)    accs.innerHTML    = html;
+}
+
+function _resizeAvatarToBlob(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const blobUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(blobUrl);
+      const MAX = 512;
+      const scale = Math.min(MAX / img.width, MAX / img.height, 1);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width  = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(blob => {
+        if (blob) resolve(blob);
+        else reject(new Error('Falha ao processar imagem'));
+      }, 'image/jpeg', 0.85);
+    };
+    img.onerror = reject;
+    img.src = blobUrl;
+  });
+}
+
+async function _uploadAvatarBlob(uid, blob) {
+  const { storage, ref, uploadBytes, getDownloadURL } = await import('./firebase.js');
+  const { doc, setDoc }  = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+  const avatarRef = ref(storage, `avatars/${uid}.jpg`);
+  await uploadBytes(avatarRef, blob, {
+    contentType: 'image/jpeg',
+    cacheControl: 'public, max-age=3600',
+  });
+  const url = await getDownloadURL(avatarRef);
+  await setDoc(doc(db, 'users', uid, 'profile', 'main'), { avatarUrl: url }, { merge: true });
+  return url;
+}
+
+async function _migrateAvatarFromLocalStorage(uid, dataUrl) {
+  try {
+    const resp = await fetch(dataUrl);
+    const blob = await resp.blob();
+    const url  = await _uploadAvatarBlob(uid, blob);
+    STATE.avatarUrl = url;
+    _setAvatarImg(url);
+    localStorage.removeItem('accs_avatar_' + uid);
+    console.info('[migration] avatar migrado para Storage');
+  } catch (err) {
+    console.warn('[migration] Falha ao migrar avatar:', err.message);
+  }
+}
+
 window.handleAvatarUpload = async function(event) {
   const file = event.target.files?.[0];
   if (!file) return;
   const user = STATE.currentUser;
   if (!user) return;
+
+  showToast('⏳ Enviando foto...');
   try {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const dataUrl = e.target.result;
-      // Update UI immediately
-      const accsAvatar = document.getElementById('accs-avatar');
-      if (accsAvatar) accsAvatar.innerHTML = `<img src="${dataUrl}" alt="avatar">`;
-      const sidebarAvatar = document.getElementById('sidebar-avatar');
-      if (sidebarAvatar) { sidebarAvatar.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;border-radius:50%;object-fit:cover" alt="avatar">`; }
-      // Save to localStorage as fallback (Firebase Storage not available in all plans)
-      localStorage.setItem('accs_avatar_' + user.uid, dataUrl);
-      showToast('✅ Foto de perfil atualizada!');
-    };
-    reader.readAsDataURL(file);
+    const blob = await _resizeAvatarToBlob(file);
+
+    // Preview imediato enquanto o upload acontece
+    const previewUrl = URL.createObjectURL(blob);
+    _setAvatarImg(previewUrl);
+
+    const url = await _uploadAvatarBlob(user.uid, blob);
+    URL.revokeObjectURL(previewUrl);
+
+    STATE.avatarUrl = url;
+    _setAvatarImg(url);
+    localStorage.removeItem('accs_avatar_' + user.uid);
+    showToast('✅ Foto de perfil atualizada!');
   } catch(e) {
-    showToast('Erro ao carregar foto: ' + e.message);
+    showToast('❌ Erro ao enviar foto: ' + e.message);
   }
 };
 

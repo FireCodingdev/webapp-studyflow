@@ -19,6 +19,13 @@ import {
   ReCaptchaV3Provider,
   getToken as getAppCheckToken_,
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check.js';
+import {
+  getStorage,
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyC8IqRSiaaS6Vk6IHm-JQeK4MdMqPZVkP0",
@@ -58,7 +65,9 @@ export async function getAppCheckToken() {
   }
 }
 
-export { auth, db, appCheck };
+const storage = getStorage(app);
+
+export { auth, db, appCheck, storage, ref, uploadBytes, getDownloadURL, deleteObject };
 
 // ===== SYNC FUNCTIONS =====
 
