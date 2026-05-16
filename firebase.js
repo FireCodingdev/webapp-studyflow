@@ -14,6 +14,11 @@ import {
   getDoc,
   setDoc,
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import {
+  initializeAppCheck,
+  ReCaptchaV3Provider,
+  getToken as getAppCheckToken_,
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyC8IqRSiaaS6Vk6IHm-JQeK4MdMqPZVkP0",
@@ -32,7 +37,25 @@ const auth = getAuth(app);
 // usamos o Firestore padrão.
 const db = getFirestore(app);
 
-export { auth, db };
+// ── App Check (reCAPTCHA v3) ─────────────────────────────────────────────────
+// Obtenha a site key em: Firebase Console → App Check → Apps → Registrar app →
+// selecione reCAPTCHA v3 → copie a "Site key" gerada no Google reCAPTCHA Admin.
+const appCheck = initializeAppCheck(app, {
+  provider: new ReCaptchaV3Provider('RECAPTCHA_SITE_KEY'),
+  isTokenAutoRefreshEnabled: true,
+});
+
+// Retorna o token atual do App Check (string vazia em caso de falha).
+export async function getAppCheckToken() {
+  try {
+    const result = await getAppCheckToken_(appCheck, false);
+    return result.token;
+  } catch {
+    return '';
+  }
+}
+
+export { auth, db, appCheck };
 
 // ===== SYNC FUNCTIONS =====
 

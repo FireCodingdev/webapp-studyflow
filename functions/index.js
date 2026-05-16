@@ -7,6 +7,7 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const { getAuth } = require('firebase-admin/auth');
+const { getAppCheck } = require('firebase-admin/app-check');
 const { getFirestore } = require('firebase-admin/firestore');
 const { initializeApp } = require('firebase-admin/app');
 
@@ -38,7 +39,16 @@ exports.classroomToken = onRequest(
       return res.status(405).json({ error: 'Método não permitido' });
     }
 
-    // 2. Valida autenticação Firebase
+    // 2. Valida App Check
+    const appCheckToken = req.headers['x-firebase-appcheck'];
+    if (!appCheckToken) return res.status(401).json({ error: 'App Check inválido' });
+    try {
+      await getAppCheck().verifyToken(appCheckToken);
+    } catch {
+      return res.status(401).json({ error: 'App Check inválido' });
+    }
+
+    // 3. Valida autenticação Firebase
     const authHeader = req.headers.authorization || '';
     const idToken    = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
     if (!idToken) return res.status(401).json({ error: 'Token de autenticação ausente' });
@@ -151,6 +161,15 @@ exports.geminiProxy = onRequest(
 
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Método não permitido' });
+    }
+
+    // Valida App Check
+    const appCheckToken = req.headers['x-firebase-appcheck'];
+    if (!appCheckToken) return res.status(401).json({ error: 'App Check inválido' });
+    try {
+      await getAppCheck().verifyToken(appCheckToken);
+    } catch {
+      return res.status(401).json({ error: 'App Check inválido' });
     }
 
     const authHeader = req.headers.authorization || '';

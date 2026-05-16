@@ -29,17 +29,21 @@ async function analisarImagemCronograma(imageFile) {
 
   // Pega o token de autenticação do usuário logado no Firebase
   // Isso prova ao servidor que é um usuário válido do app
-  const { auth } = await import('./firebase.js');
+  const { auth, getAppCheckToken } = await import('./firebase.js');
   const user = auth.currentUser;
   if (!user) throw new Error('Você precisa estar logado para usar a IA.');
-  const idToken = await user.getIdToken();
+  const [idToken, appCheckToken] = await Promise.all([
+    user.getIdToken(),
+    getAppCheckToken(),
+  ]);
 
   // Chama a Firebase Function (proxy seguro) — a chave nunca fica no cliente
   const response = await fetch(PROXY_URL, {
     method: 'POST',
     headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${idToken}`,  // autenticação do usuário
+      'Content-Type':        'application/json',
+      'Authorization':       `Bearer ${idToken}`,
+      'X-Firebase-AppCheck': appCheckToken,
     },
     body: JSON.stringify({ imageBase64: base64, mimeType }),
   });

@@ -3,7 +3,7 @@
 // A client_secret NUNCA fica no frontend — a troca de token é feita via
 // Firebase Function (classroomToken), que mantém a secret segura no servidor.
 
-import { db, auth } from './firebase.js';
+import { db, auth, getAppCheckToken } from './firebase.js';
 import {
   doc,
   getDoc,
@@ -158,11 +158,13 @@ async function trocarCodePorToken(code, uid) {
     setBotaoSincronizando(true);
 
     const idToken = await auth.currentUser.getIdToken();
+    const appCheckToken = await getAppCheckToken();
     const resp = await fetch(CLASSROOM_TOKEN_FUNCTION, {
       method: 'POST',
       headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${idToken}`,
+        'Content-Type':        'application/json',
+        'Authorization':       `Bearer ${idToken}`,
+        'X-Firebase-AppCheck': appCheckToken,
       },
       body: JSON.stringify({
         action:       'exchange',
@@ -204,12 +206,14 @@ async function renovarToken(uid, refreshToken) {
   try {
     const idToken = await auth.currentUser?.getIdToken();
     if (!idToken) return null;
+    const appCheckToken = await getAppCheckToken();
 
     const resp = await fetch(CLASSROOM_TOKEN_FUNCTION, {
       method: 'POST',
       headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${idToken}`,
+        'Content-Type':        'application/json',
+        'Authorization':       `Bearer ${idToken}`,
+        'X-Firebase-AppCheck': appCheckToken,
       },
       body: JSON.stringify({ action: 'refresh', refresh_token: refreshToken }),
     });
@@ -882,10 +886,15 @@ window._gerarRespostaIA = async function() {
   try {
     const idToken = await auth.currentUser?.getIdToken();
     if (!idToken) throw new Error('Faça login primeiro.');
+    const appCheckToken = await getAppCheckToken();
 
     const resp = await fetch(GEMINI_PROXY, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      headers: {
+        'Content-Type':        'application/json',
+        'Authorization':       `Bearer ${idToken}`,
+        'X-Firebase-AppCheck': appCheckToken,
+      },
       body: JSON.stringify({ mode: 'answer', titulo, descricao }),
     });
     const data = await resp.json();
@@ -926,9 +935,10 @@ window._resumirPostClassroom = async function(btn) {
     const uid = auth.currentUser?.uid;
     if (!uid) throw new Error('Faça login primeiro.');
 
-    const [idToken, classroomToken] = await Promise.all([
+    const [idToken, classroomToken, appCheckToken] = await Promise.all([
       auth.currentUser.getIdToken(),
       getTokenValido(uid),
+      getAppCheckToken(),
     ]);
 
     if (!textoPrincipal.trim() && !driveFileId) {
@@ -943,7 +953,11 @@ window._resumirPostClassroom = async function(btn) {
 
     const resp = await fetch(GEMINI_PROXY, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+      headers: {
+        'Content-Type':        'application/json',
+        'Authorization':       `Bearer ${idToken}`,
+        'X-Firebase-AppCheck': appCheckToken,
+      },
       body: JSON.stringify(body),
     });
 
@@ -1078,9 +1092,14 @@ function _mostrarModalResumo(titulo, markdown, usedFile, driveFileId, driveAltLi
         reader.readAsDataURL(file);
       });
 
+      const acToken = await getAppCheckToken();
       const resp = await fetch(GEMINI_PROXY, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        headers: {
+          'Content-Type':        'application/json',
+          'Authorization':       `Bearer ${idToken}`,
+          'X-Firebase-AppCheck': acToken,
+        },
         body: JSON.stringify({
           mode: 'summarize',
           text: textoPrincipal,
