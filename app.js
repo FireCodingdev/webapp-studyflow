@@ -1433,6 +1433,29 @@ function renderTaskCard(task, markOverdue = false) {
   const barColor = task.type === 'exam' ? '#ff4757' : (subjectColor || 'var(--accent)');
   const isOverdue = markOverdue || task._overdue;
   const notesId = `task-notes-${task.id}`;
+
+  const isClassroom = task.source === 'classroom';
+  const showResponder = isClassroom && !task.done && task.courseId && task.classroomId;
+  const classroomBtns = showResponder ? `
+    <div class="task-cl-actions">
+      <button class="cl-responder-btn" onclick="window._abrirModalResponder(this)"
+        data-course-id="${escapeHtml(task.courseId)}"
+        data-cw-id="${escapeHtml(task.classroomId)}"
+        data-worktype="${escapeHtml(task.workType || 'ASSIGNMENT')}"
+        data-title="${escapeHtml(task.title)}"
+        data-text="${escapeHtml(task.notes || '')}"
+        data-due="${escapeHtml(task.deadline || '')}"
+        data-link="${escapeHtml(task.alternateLink || '')}">Responder →</button>
+      <button class="cl-resumir-btn" onclick="window._resumirPostClassroom(this)"
+        data-title="${escapeHtml(task.title)}"
+        data-text="${escapeHtml(task.notes || '')}"
+        data-turma="${escapeHtml(task.subjectName || '')}"
+        data-materiais="" data-drive-id="" data-drive-link="" data-drive-title="">✨ Resumir</button>
+    </div>` : '';
+
+  const workTag = isClassroom && task.type === 'work'
+    ? `<span class="tag" style="background:rgba(66,133,244,0.15);color:#4285F4">Atividade</span>` : '';
+
   return `
     <div class="task-card ${task.done ? 'done' : ''} fade-in" id="task-${task.id}">
       <div class="task-card-bar" style="background:${barColor}"></div>
@@ -1445,10 +1468,11 @@ function renderTaskCard(task, markOverdue = false) {
           ${task.notes ? `<div id="${notesId}" class="task-notes collapsed" onclick="this.classList.toggle('collapsed')">${escapeHtml(task.notes)}</div>` : ''}
           <div class="task-meta">
             ${task.subjectName ? `<span class="tag tag-subject" style="background:${subjectColor}22;color:${subjectColor}">${escapeHtml(task.subjectName)}</span>` : ''}
-            ${task.type === 'exam' ? `<span class="tag tag-exam">${typeLabels[task.type]}</span>` : ''}
+            ${task.type === 'exam' ? `<span class="tag tag-exam">${typeLabels[task.type]}</span>` : workTag}
             ${isOverdue ? `<span class="tag tag-deadline">ATRASADA</span>` : ''}
             ${deadlineLabel ? `<span class="tag ${isUrgent(task.deadline) ? 'tag-deadline' : 'tag-ok'}">${deadlineLabel}</span>` : ''}
           </div>
+          ${classroomBtns}
         </div>
         <button class="task-delete" onclick="deleteTask('${task.id}')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
@@ -1484,6 +1508,16 @@ window.toggleTask = async function(id) {
     renderTasks();
     renderDashboard();
     showToast(task.done ? '✅ Concluída!' : 'Marcada como pendente');
+  }
+};
+
+window._markClassroomTaskDone = async function(cwId) {
+  const task = STATE.tasks.find(t => t.classroomId === cwId);
+  if (task && !task.done) {
+    task.done = true;
+    await save();
+    renderTasks();
+    renderDashboard();
   }
 };
 

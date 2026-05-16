@@ -80,18 +80,21 @@ async function _refreshUncachedSubmissions(uid, token, atividades, cache) {
   }));
 }
 
-// Atualiza o card no DOM sem precisar re-renderizar toda a lista
+// Atualiza todos os cards (dashboard e atividades) sem re-renderizar
 function _marcarCardEntregueDOM(cwId) {
-  const respBtn = document.querySelector(`.cl-responder-btn[data-cw-id="${cwId}"]`);
-  if (!respBtn) return;
-  const card = respBtn.closest('.cl-post-card');
-  respBtn.remove();
-  if (!card) return;
-  const dueEl = card.querySelector('.cl-post-due');
-  if (dueEl) {
-    dueEl.innerHTML = '✅ Entregue!';
-    dueEl.style.cssText = 'color:#2ed573;background:rgba(46,213,115,0.1);border:1px solid rgba(46,213,115,0.25);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;margin-bottom:8px;display:inline-flex;align-items:center;gap:6px';
-  }
+  document.querySelectorAll(`.cl-responder-btn[data-cw-id="${cwId}"]`).forEach(respBtn => {
+    const postCard = respBtn.closest('.cl-post-card');
+    if (postCard) {
+      const dueEl = postCard.querySelector('.cl-post-due');
+      if (dueEl) {
+        dueEl.innerHTML = '✅ Entregue!';
+        dueEl.style.cssText = 'color:#2ed573;background:rgba(46,213,115,0.1);border:1px solid rgba(46,213,115,0.25);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;margin-bottom:8px;display:inline-flex;align-items:center;gap:6px';
+      }
+    }
+    respBtn.remove();
+  });
+  // Marca a tarefa como concluída no STATE do app (se disponível)
+  window._markClassroomTaskDone?.(cwId);
 }
 
 // ─── PONTO DE ENTRADA ─────────────────────────────────────────────────────────
@@ -409,16 +412,24 @@ async function buscarAtividadesDaTurma(curso, token) {
     );
     if (!res.ok) return [];
     const { courseWork = [] } = await res.json();
-    return courseWork.map(cw => ({ ...cw, _nometurma: curso.name }));
+    return courseWork.map(cw => ({ ...cw, _nometurma: curso.name, _courseId: curso.id }));
   } catch { return []; }
 }
 
 function importarAtividades(atividades) {
   const idsExistentes = new Set(_STATE.tasks.map(t => t.classroomId).filter(Boolean));
+  // Build map classroomId → courseId for retroactive updates on existing tasks
+  const cwCourseMap = new Map(
+    atividades.filter(cw => cw.id && cw._courseId).map(cw => [cw.id, cw._courseId])
+  );
   let novas = 0;
 
   for (const task of _STATE.tasks) {
     if (!task.classroomId) continue;
+    // Retroactively fill missing courseId
+    if (!task.courseId && cwCourseMap.has(task.classroomId)) {
+      task.courseId = cwCourseMap.get(task.classroomId);
+    }
     if (task.subjectId && _STATE.subjects.find(s => s.id === task.subjectId)) continue;
     const subject = encontrarMateria(task.subjectName);
     if (subject) {
@@ -439,19 +450,25 @@ function importarAtividades(atividades) {
 
     const subject = encontrarMateria(cw._nometurma);
 
+    const titleNorm = (cw.title || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const isExam = /prova|avalia[cç]|teste|\bp[123]\b|\bn[123]\b|simulado/.test(titleNorm);
+
     _STATE.tasks.push({
-      id:           `classroom_${cw.id}`,
-      classroomId:  cw.id,
-      title:        cw.title || 'Atividade sem título',
-      subjectId:    subject?.id    || null,
-      subjectName:  subject?.name  || cw._nometurma,
-      subjectColor: subject?.color || '#4285F4',
-      type:         'work',
+      id:            `classroom_${cw.id}`,
+      classroomId:   cw.id,
+      courseId:      cw._courseId || null,
+      title:         cw.title || 'Atividade sem título',
+      subjectId:     subject?.id    || null,
+      subjectName:   subject?.name  || limparNomeTurma(cw._nometurma),
+      subjectColor:  subject?.color || '#4285F4',
+      type:          isExam ? 'exam' : 'work',
+      workType:      cw.workType || 'ASSIGNMENT',
+      alternateLink: cw.alternateLink || '',
       deadline,
-      notes:        cw.description || null,
-      done:         false,
-      createdAt:    cw.creationTime || new Date().toISOString(),
-      source:       'classroom',
+      notes:         cw.description || null,
+      done:          false,
+      createdAt:     cw.creationTime || new Date().toISOString(),
+      source:        'classroom',
     });
 
     novas++;
@@ -461,12 +478,7 @@ function importarAtividades(atividades) {
 }
 
 function encontrarMateria(nomeTurma) {
-  if (!nomeTurma || !_STATE.subjects?.length) return null;
-  const turmaLower = nomeTurma.toLowerCase();
-  return _STATE.subjects.find(s => {
-    const sLower = s.name.toLowerCase();
-    return turmaLower.includes(sLower) || sLower.includes(turmaLower);
-  }) || null;
+  return _matchSubjectForTurma(nomeTurma);
 }
 
 // ─── BOTÃO NA SIDEBAR ─────────────────────────────────────────────────────────
@@ -530,6 +542,9 @@ function injetarEstilosClassroom() {
     .classroom-btn--connected:hover:not(:disabled) {
       background: rgba(52, 168, 83, 0.18);
       border-color: rgba(52, 168, 83, 0.7);
+    }
+    .task-cl-actions {
+      display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;
     }
   `;
   document.head.appendChild(style);
