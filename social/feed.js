@@ -1,181 +1,312 @@
-// ===== SOCIAL: CONNECTIONS.JS =====
-// 2025-05-15 — Atualizado: discoverPeers prioriza colegas do mesmo curso/período/semestre
-// e exibe label "Da sua turma 🎓".
+// ===== SOCIAL: FEED.JS =====
+// 2025-05-15 — Refatorado: queries duplas por curso/período, campos acadêmicos
+// nos posts, seções separadas "Da sua turma" e "Comunidade".
 
 import { db, auth } from '../firebase.js';
-import { renderUserCard } from '../components/user-card.js';
+import { renderPostCard } from '../components/post-card.js';
 import {
-  doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove,
-  collection, query, limit, getDocs, increment, addDoc, serverTimestamp,
+  collection, query, orderBy, limit, onSnapshot,
+  addDoc, serverTimestamp, where, getDocs, getDoc, doc,
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
-// ── Seguir ────────────────────────────────────────────────────────────────────
-export async function followUser(currentUid, targetUid) {
-  if (!currentUid || !targetUid || currentUid === targetUid) return false;
-  try {
-    await setDoc(doc(db, 'connections', currentUid), { following: arrayUnion(targetUid) }, { merge: true });
-    await setDoc(doc(db, 'connections', targetUid), { followers: arrayUnion(currentUid) }, { merge: true });
-    await updateDoc(doc(db, 'users', currentUid), { 'social.following': increment(1) });
-    await updateDoc(doc(db, 'users', targetUid),  { 'social.followers': increment(1) });
-    await _createFollowNotification(currentUid, targetUid);
-    return true;
-  } catch (err) {
-    console.error('[connections] Erro ao seguir:', err);
-    return false;
-  }
+import { loadFullAcademicProfile, FACAPE_COURSES } from './turmas.js';
+
+let _feedUnsubscribe = null;
+
+export function initFeed(STATE, helpers) {
+  window._renderFeed = renderFeed;
 }
 
-// ── Deixar de seguir ──────────────────────────────────────────────────────────
-export async function unfollowUser(currentUid, targetUid) {
-  if (!currentUid || !targetUid) return false;
+// ── Carrega perfil acadêmico do usuário atual ─────────────────────────────────
+async function _getMyAcademicProfile(uid) {
   try {
-    await setDoc(doc(db, 'connections', currentUid), { following: arrayRemove(targetUid) }, { merge: true });
-    await setDoc(doc(db, 'connections', targetUid), { followers: arrayRemove(currentUid) }, { merge: true });
-    await updateDoc(doc(db, 'users', currentUid), { 'social.following': increment(-1) });
-    await updateDoc(doc(db, 'users', targetUid),  { 'social.followers': increment(-1) });
-    return true;
-  } catch (err) {
-    console.error('[connections] Erro ao deixar de seguir:', err);
-    return false;
-  }
+    return await loadFullAcademicProfile(uid);
+  } catch { return null; }
 }
 
-// ── Verificar se segue ────────────────────────────────────────────────────────
-export async function isFollowing(currentUid, targetUid) {
-  try {
-    const snap = await getDoc(doc(db, 'connections', currentUid));
-    if (!snap.exists()) return false;
-    return (snap.data().following || []).includes(targetUid);
-  } catch { return false; }
-}
-
-export async function getFollowing(uid) {
-  try {
-    const snap = await getDoc(doc(db, 'connections', uid));
-    if (!snap.exists()) return [];
-    return snap.data().following || [];
-  } catch { return []; }
-}
-
-export async function getFollowers(uid) {
-  try {
-    const snap = await getDoc(doc(db, 'connections', uid));
-    if (!snap.exists()) return [];
-    return snap.data().followers || [];
-  } catch { return []; }
-}
-
-// ── Descobrir colegas (prioriza mesma turma) ──────────────────────────────────
-export async function discoverPeers(currentUid, limitN = 20) {
-  try {
-    // Carrega perfil do usuário atual para priorização
-    const mySnap = await getDoc(doc(db, 'users', currentUid, 'profile', 'academic'));
-    const myData = mySnap.exists() ? mySnap.data() : {};
-
-    const snap = await getDocs(query(collection(db, 'user_profiles'), limit(60)));
-    const peers = snap.docs
-      .filter(d => d.id !== currentUid)
-      .map(d => ({ uid: d.id, ...d.data() }));
-
-    // Ordena: mesmo curso + mesmo período + mesmo semestre → topo
-    peers.sort((a, b) => {
-      const score = (p) =>
-        (p.courseId  === myData.courseId  ? 4 : 0) +
-        (p.period    === myData.period    ? 2 : 0) +
-        (p.semester  === myData.semester  ? 1 : 0);
-      return score(b) - score(a);
-    });
-
-    // Marca quem é da mesma turma
-    return peers.slice(0, limitN).map(p => ({
-      ...p,
-      isSameTurma: p.courseId === myData.courseId && p.period === myData.period,
-    }));
-  } catch (err) {
-    console.error('[connections] Erro ao descobrir colegas:', err);
-    return [];
-  }
-}
-
-// ── Renderizar seção Descobrir ────────────────────────────────────────────────
-export async function renderDiscoverSection(currentUid) {
-  const container = document.getElementById('discover-list');
+// ── Renderiza o feed (duas seções: turma e comunidade) ────────────────────────
+export async function renderFeed() {
+  const container = document.getElementById('social-feed-list');
   if (!container) return;
-  container.innerHTML = `<div class="feed-loading">⏳ Buscando colegas...</div>`;
+  container.innerHTML = `<div class="feed-loading">⏳ Carregando posts...</div>`;
 
-  const peers       = await discoverPeers(currentUid);
-  const followingList = await getFollowing(currentUid);
+  if (_feedUnsubscribe) { _feedUnsubscribe(); _feedUnsubscribe = null; }
 
-  if (!peers.length) {
-    container.innerHTML = `<div class="feed-empty">Nenhum colega encontrado ainda.</div>`;
+  const user = auth.currentUser;
+  if (!user) {
+    container.innerHTML = `<p class="feed-empty">Faça login para ver o feed.</p>`;
     return;
   }
 
-  container.innerHTML = peers.map(p => {
-    const card = renderUserCard(p, followingList.includes(p.uid));
-    if (!p.isSameTurma) return card;
-    // Injeta label "Da sua turma" no card
-    return card.replace(
-      'class="user-card"',
-      'class="user-card same-turma"'
-    ).replace(
-      'class="user-card-name"',
-      'class="user-card-name"'
-    ).replace(
-      `<span class="user-card-name">`,
-      `<span class="user-turma-label">Da sua turma 🎓</span><span class="user-card-name">`
-    );
-  }).join('');
+  const profile = await _getMyAcademicProfile(user.uid);
+
+  if (!profile?.courseId) {
+    // Sem perfil: mostra feed público geral
+    _subscribePublicFeed(container, user.uid);
+    return;
+  }
+
+  // Com perfil: carrega duas queries e mescla
+  _subscribeAcademicFeed(container, user.uid, profile);
 }
 
-// ── Handler global: toggle follow ─────────────────────────────────────────────
-window.toggleFollowUser = async function(targetUid) {
+function _subscribePublicFeed(container, uid) {
+  const q = query(
+    collection(db, 'posts'),
+    where('visibility', '==', 'public'),
+    orderBy('createdAt', 'desc'),
+    limit(30)
+  );
+  _feedUnsubscribe = onSnapshot(q, (snap) => {
+    if (snap.empty) {
+      container.innerHTML = `<div class="feed-empty">Nenhum post ainda. Seja o primeiro! 🚀</div><button class="fab-post" onclick="window.openNewPostModal()">✏️ Novo post</button>`;
+      return;
+    }
+    const posts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    container.innerHTML = `
+      <div class="feed-section-label community">🌍 Comunidade</div>
+      ${posts.map(p => renderPostCard(p, uid)).join('')}
+      <button class="fab-post" onclick="window.openNewPostModal()">✏️ Novo post</button>
+    `;
+  }, (err) => {
+    console.error('[feed] Erro:', err);
+    container.innerHTML = `<div class="feed-empty">Erro ao carregar. Verifique sua conexão.</div>`;
+  });
+}
+
+function _subscribeAcademicFeed(container, uid, profile) {
+  let turmaPostsCache = [];
+  let communityPostsCache = [];
+  let unsubTurma = null;
+  let unsubComm  = null;
+
+  function _render() {
+    // Mescla e deduplica por id
+    const all = [...turmaPostsCache];
+    const turmaIds = new Set(turmaPostsCache.map(p => p.id));
+    communityPostsCache.forEach(p => { if (!turmaIds.has(p.id)) all.push(p); });
+
+    if (!all.length) {
+      container.innerHTML = `<div class="feed-empty">Nenhum post ainda. Seja o primeiro! 🚀</div><button class="fab-post" onclick="window.openNewPostModal()">✏️ Novo post</button>`;
+      return;
+    }
+
+    const turma     = turmaPostsCache.slice().sort((a, b) => _ts(b) - _ts(a));
+    const community = communityPostsCache
+      .filter(p => !turmaIds.has(p.id))
+      .sort((a, b) => _ts(b) - _ts(a));
+
+    let html = '';
+    if (turma.length) {
+      html += `<div class="feed-section-label turma">📌 Da sua turma</div>`;
+      html += turma.map(p => renderPostCard(p, uid)).join('');
+    }
+    if (community.length) {
+      html += `<div class="feed-section-label community">🌍 Comunidade</div>`;
+      html += community.map(p => renderPostCard(p, uid)).join('');
+    }
+    html += `<button class="fab-post" onclick="window.openNewPostModal()">✏️ Novo post</button>`;
+
+    container.innerHTML = html;
+  }
+
+  // Query 1: posts do mesmo curso + período
+  const qTurma = query(
+    collection(db, 'posts'),
+    where('courseId', '==', profile.courseId),
+    where('period',   '==', profile.period),
+    orderBy('createdAt', 'desc'),
+    limit(20)
+  );
+  unsubTurma = onSnapshot(qTurma, (snap) => {
+    turmaPostsCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    _render();
+  }, (err) => {
+    console.warn('[feed] Query turma error (índice faltando?):', err.message);
+    // Fallback: sem filtro de turma
+    turmaPostsCache = [];
+    _render();
+  });
+
+  // Query 2: posts públicos gerais
+  const qComm = query(
+    collection(db, 'posts'),
+    where('visibility', '==', 'public'),
+    orderBy('createdAt', 'desc'),
+    limit(30)
+  );
+  unsubComm = onSnapshot(qComm, (snap) => {
+    communityPostsCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    _render();
+  }, (err) => {
+    console.error('[feed] Query community error:', err);
+  });
+
+  // Agrupa os dois unsubs em um único
+  _feedUnsubscribe = () => { unsubTurma?.(); unsubComm?.(); };
+}
+
+function _ts(post) {
+  if (!post.createdAt) return 0;
+  return post.createdAt.toDate ? post.createdAt.toDate().getTime() : new Date(post.createdAt).getTime();
+}
+
+// ── Publicar novo post (com campos acadêmicos) ────────────────────────────────
+export async function publishPost({ type, content, subjectId, visibility }) {
+  const user = auth.currentUser;
+  if (!user || !content?.trim()) return null;
+
+  const profile = await _getMyAcademicProfile(user.uid);
+  const course  = FACAPE_COURSES.find(c => c.id === profile?.courseId);
+
+  try {
+    const ref = await addDoc(collection(db, 'posts'), {
+      authorId:    user.uid,
+      authorName:  user.displayName || user.email.split('@')[0],
+      type:        type || 'doubt',
+      content:     content.trim(),
+      subjectId:   subjectId || '',
+      likes:       0,
+      replies:     [],
+      visibility:  visibility || 'public',
+      createdAt:   serverTimestamp(),
+      // Campos acadêmicos do autor
+      institution: profile?.institution || '',
+      courseId:    profile?.courseId    || '',
+      course:      profile?.course      || '',
+      courseSigla: course?.sigla        || '',
+      semester:    profile?.semester    || 0,
+      period:      profile?.period      || '',
+    });
+    return ref.id;
+  } catch (err) {
+    console.error('[feed] Erro ao publicar:', err);
+    return null;
+  }
+}
+
+// ── Modal: novo post ──────────────────────────────────────────────────────────
+window.openNewPostModal = async function() {
+  const overlay = document.getElementById('modal-overlay');
+  const body    = document.getElementById('modal-body');
+  if (!overlay || !body) return;
+
   const user = auth.currentUser;
   if (!user) return;
 
-  const currentUid = user.uid;
-  const btn = document.querySelector(`[data-follow-uid="${targetUid}"]`);
-  const already = await isFollowing(currentUid, targetUid);
+  // Carrega matérias do perfil para o seletor
+  const profile = await _getMyAcademicProfile(user.uid);
+  const subjects = profile?.subjects || [];
 
-  if (already) {
-    await unfollowUser(currentUid, targetUid);
-    if (btn) { btn.textContent = '➕ Seguir'; btn.dataset.following = 'false'; }
-  } else {
-    await followUser(currentUid, targetUid);
-    if (btn) { btn.textContent = '✔ Seguindo'; btn.dataset.following = 'true'; }
+  const subjectOptions = subjects.length
+    ? `<option value="">Nenhuma (geral)</option>` +
+      subjects.map(s => `<option value="${_esc(s.name)}">${_esc(s.name)}</option>`).join('')
+    : `<option value="">Sem matérias configuradas</option>`;
+
+  body.innerHTML = `
+    <div class="modal-header"><h3>📝 Novo Post</h3></div>
+    <div class="modal-form">
+      <div class="form-group">
+        <label class="form-label">Tipo</label>
+        <select id="post-type" class="form-input">
+          <option value="doubt">❓ Dúvida</option>
+          <option value="material">📚 Material</option>
+          <option value="achievement">🏆 Conquista</option>
+          <option value="flashcard">🃏 Flashcard</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Matéria vinculada (opcional)</label>
+        <select id="post-subject" class="form-input">
+          ${subjectOptions}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Visibilidade</label>
+        <select id="post-visibility" class="form-input">
+          <option value="public">🌍 Público</option>
+          <option value="connections">👥 Conexões</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Conteúdo</label>
+        <textarea id="post-content" class="form-input" rows="4"
+          placeholder="Compartilhe uma dúvida, material ou conquista..."></textarea>
+      </div>
+      <button class="btn-primary" onclick="window.submitNewPost()">Publicar</button>
+    </div>
+  `;
+  overlay.classList.add('active');
+  document.getElementById('modal-container')?.classList.add('active');
+};
+
+window.submitNewPost = async function() {
+  const type       = document.getElementById('post-type')?.value;
+  const subjectId  = document.getElementById('post-subject')?.value;
+  const visibility = document.getElementById('post-visibility')?.value;
+  const content    = document.getElementById('post-content')?.value;
+  if (!content?.trim()) return;
+
+  const id = await publishPost({ type, content, subjectId, visibility });
+  window.closeModal?.();
+  if (id) {
+    renderFeed();
+    const toastEl = document.getElementById('toast');
+    if (toastEl) {
+      toastEl.textContent = '✅ Post publicado!';
+      toastEl.classList.add('show');
+      setTimeout(() => toastEl.classList.remove('show'), 2500);
+    }
   }
 };
 
-// ── Notificação de follow ──────────────────────────────────────────────────────
-async function _createFollowNotification(fromUid, toUid) {
-  try {
-    const { auth } = await import('../firebase.js');
-    const fromUserName = auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || '';
-    await addDoc(collection(db, 'notifications', toUid, 'items'), {
-      type: 'follow', fromUser: fromUid, fromUserName, read: false, createdAt: serverTimestamp(),
-    });
-  } catch { /* best-effort */ }
+function _esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-// ── CSS: label "Da sua turma" ─────────────────────────────────────────────────
-(function _injectStyles() {
-  if (document.getElementById('connections-turma-style')) return;
+// ── CSS das seções do feed ────────────────────────────────────────────────────
+(function _injectFeedStyles() {
+  if (document.getElementById('feed-section-styles')) return;
   const style = document.createElement('style');
-  style.id = 'connections-turma-style';
+  style.id = 'feed-section-styles';
   style.textContent = `
-    .user-card.same-turma {
-      border-left: 3px solid var(--accent, #7c5cfc);
-    }
-    .user-turma-label {
-      display: inline-block;
-      font-size: 10px;
+    .feed-section-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
       font-weight: 700;
-      color: var(--accent, #7c5cfc);
-      background: rgba(124,92,252,.12);
-      border-radius: 10px;
-      padding: 1px 7px;
-      margin-bottom: 2px;
+      letter-spacing: .04em;
+      padding: 10px 4px 6px;
+      color: var(--text-muted, #888);
+      text-transform: uppercase;
     }
+    .feed-section-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border, #2a2a3e);
+    }
+    .feed-section-label.turma    { color: var(--accent, #7c5cfc); }
+    .feed-section-label.community { color: #888; }
+    .fab-post {
+      display: block;
+      margin: 12px auto 0;
+      padding: 10px 22px;
+      background: var(--accent, #7c5cfc);
+      color: #fff;
+      border: none;
+      border-radius: 24px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      position: sticky;
+      bottom: 16px;
+      box-shadow: 0 4px 16px rgba(124,92,252,.4);
+      transition: opacity .15s;
+      z-index: 10;
+    }
+    .fab-post:hover { opacity: .88; }
   `;
   document.head.appendChild(style);
 })();
