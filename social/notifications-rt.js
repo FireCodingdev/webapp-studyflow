@@ -1,10 +1,7 @@
 // ===== SOCIAL: NOTIFICATIONS-RT.JS =====
-// Notificações em tempo real via Firestore onSnapshot — NOVO MÓDULO
+// 2025-05-15 — Adicionado suporte ao tipo chat_message (mensagens de chat das salas).
 
 import { db } from '../firebase.js';
-
-// CORREÇÃO: substituído "await import(...)" (top-level await) por import estático.
-// O top-level await travava toda a cadeia de módulos, impedindo o app de sair do splash.
 import {
   collection, query, orderBy, limit, onSnapshot,
   updateDoc, doc, where, getDocs,
@@ -12,7 +9,24 @@ import {
 
 let _nrtUnsubscribe = null;
 
-// ---- Iniciar listener de notificações ----
+// ── Ícones e labels por tipo de notificação ───────────────────────────────────
+const NOTIF_ICONS = {
+  follow:       '👤',
+  like:         '❤️',
+  reply:        '💬',
+  achievement:  '🏆',
+  chat_message: '💬',
+};
+
+const NOTIF_LABELS = {
+  follow:       'Seguiu você',
+  like:         'Curtiu seu post',
+  reply:        'Respondeu seu post',
+  achievement:  'Conquista desbloqueada',
+  chat_message: 'Nova mensagem na sala',
+};
+
+// ── Iniciar listener em tempo real ────────────────────────────────────────────
 export function initRealtimeNotifications(uid) {
   if (_nrtUnsubscribe) { _nrtUnsubscribe(); _nrtUnsubscribe = null; }
 
@@ -24,10 +38,8 @@ export function initRealtimeNotifications(uid) {
   );
 
   _nrtUnsubscribe = onSnapshot(q, (snap) => {
-    const count = snap.size;
-    _updateBadge(count);
-
-    if (count > 0) {
+    _updateBadge(snap.size);
+    if (snap.size > 0) {
       const latest = snap.docs[0]?.data();
       if (latest) _showNotificationToast(latest);
     }
@@ -36,12 +48,11 @@ export function initRealtimeNotifications(uid) {
   });
 }
 
-// ---- Parar listener ----
 export function stopRealtimeNotifications() {
   if (_nrtUnsubscribe) { _nrtUnsubscribe(); _nrtUnsubscribe = null; }
 }
 
-// ---- Marcar notificação como lida ----
+// ── Marcar como lida ──────────────────────────────────────────────────────────
 export async function markNotificationRead(uid, notifId) {
   try {
     await updateDoc(doc(db, 'notifications', uid, 'items', notifId), { read: true });
@@ -50,9 +61,9 @@ export async function markNotificationRead(uid, notifId) {
   }
 }
 
-// ---- Atualiza badge no ícone de sino ----
+// ── Atualiza badge do sino ────────────────────────────────────────────────────
 function _updateBadge(count) {
-  let badge = document.getElementById('notif-badge');
+  let badge  = document.getElementById('notif-badge');
   const bellBtn = document.querySelector('.bell-btn');
   if (!bellBtn) return;
 
@@ -71,21 +82,28 @@ function _updateBadge(count) {
   }
 }
 
-// ---- Exibe toast de notificação ----
+// ── Toast de notificação ──────────────────────────────────────────────────────
 let _lastNotifShown = null;
 function _showNotificationToast(notif) {
-  const key = notif.fromUser + notif.type + (notif.createdAt?.seconds || '');
+  const key = (notif.fromUser || notif.roomId || '') + notif.type + (notif.createdAt?.seconds || '');
   if (_lastNotifShown === key) return;
   _lastNotifShown = key;
 
-  const messages = {
-    follow: '👤 Alguém começou a te seguir!',
-    like: '❤️ Seu post recebeu uma curtida!',
-    reply: '💬 Alguém respondeu seu post!',
-    achievement: '🏆 Nova conquista desbloqueada!',
-  };
+  let msg;
+  if (notif.type === 'chat_message') {
+    const author  = notif.authorName || 'Colega';
+    const room    = notif.roomName   || 'Sala';
+    const preview = notif.preview    ? `: "${notif.preview}"` : '';
+    msg = `💬 ${author} em ${room}${preview}`;
+  } else {
+    msg = {
+      follow:      '👤 Alguém começou a te seguir!',
+      like:        '❤️ Seu post recebeu uma curtida!',
+      reply:       '💬 Alguém respondeu seu post!',
+      achievement: '🏆 Nova conquista desbloqueada!',
+    }[notif.type] || '🔔 Nova notificação!';
+  }
 
-  const msg = messages[notif.type] || '🔔 Nova notificação!';
   const toastEl = document.getElementById('toast');
   if (toastEl) {
     toastEl.textContent = msg;
@@ -94,12 +112,11 @@ function _showNotificationToast(notif) {
   }
 }
 
-// ---- Renderizar painel de notificações (chamado ao abrir painel) ----
+// ── Renderizar painel de notificações ─────────────────────────────────────────
 export async function renderNotificationsPanel(uid) {
   const container = document.getElementById('notif-panel-list');
   if (!container) return;
 
-  // getDocs já está disponível via import estático no topo do arquivo
   const q = query(
     collection(db, 'notifications', uid, 'items'),
     orderBy('createdAt', 'desc'),
@@ -114,13 +131,27 @@ export async function renderNotificationsPanel(uid) {
     }
 
     container.innerHTML = snap.docs.map(d => {
-      const n = d.data();
-      const icons = { follow: '👤', like: '❤️', reply: '💬', achievement: '🏆' };
-      const labels = { follow: 'Seguiu você', like: 'Curtiu seu post', reply: 'Respondeu seu post', achievement: 'Conquista desbloqueada' };
+      const n       = d.data();
+      const icon    = NOTIF_ICONS[n.type]  || '🔔';
+      const baseLabel = NOTIF_LABELS[n.type] || 'Notificação';
+
+      let label = baseLabel;
+      if (n.type === 'chat_message') {
+        label = n.roomName
+          ? `Nova mensagem em <strong>${_esc(n.roomName)}</strong>`
+          : 'Nova mensagem em uma sala';
+        if (n.authorName) label = `${_esc(n.authorName)} em ${n.roomName ? `<strong>${_esc(n.roomName)}</strong>` : 'uma sala'}`;
+        if (n.preview)    label += `<br><span style="font-size:12px;color:var(--text-muted)">"${_esc(n.preview)}"</span>`;
+      }
+
+      const clickAction = n.type === 'chat_message' && n.roomId
+        ? `onclick="window._openChat('${n.roomId}'); window.markNotifRead('${uid}','${d.id}', this)"`
+        : `onclick="window.markNotifRead('${uid}','${d.id}', this)"`;
+
       return `
-        <div class="notif-item ${n.read ? '' : 'notif-unread'}" onclick="window.markNotifRead('${uid}','${d.id}', this)">
-          <span class="notif-icon">${icons[n.type] || '🔔'}</span>
-          <span class="notif-label">${labels[n.type] || 'Notificação'}</span>
+        <div class="notif-item ${n.read ? '' : 'notif-unread'}" ${clickAction}>
+          <span class="notif-icon">${icon}</span>
+          <span class="notif-label">${label}</span>
           ${!n.read ? '<span class="notif-dot"></span>' : ''}
         </div>
       `;
@@ -130,9 +161,13 @@ export async function renderNotificationsPanel(uid) {
   }
 }
 
-// ---- Handler global: marcar lida ao clicar ----
+// ── Handler global: marcar lida ───────────────────────────────────────────────
 window.markNotifRead = async function(uid, notifId, el) {
   await markNotificationRead(uid, notifId);
   el?.classList.remove('notif-unread');
   el?.querySelector('.notif-dot')?.remove();
 };
+
+function _esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}

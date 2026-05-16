@@ -10,26 +10,37 @@ service cloud.firestore {
       return isAuth() && request.auth.uid == uid;
     }
 
-    // ===== REGRAS EXISTENTES (não alteradas) =====
+    // ===== REGRAS EXISTENTES =====
 
-    // Dados de estudo do usuário (subjects, tasks, flashcards, classes)
+    // Dados de estudo do usuário
     match /users/{uid} {
       allow read, write: if isOwner(uid);
 
-      // Perfil acadêmico público — NOVO
-      match /profile/{doc} {
-        allow read: if isAuth();         // qualquer usuário logado pode ler
-        allow write: if isOwner(uid);   // só o próprio usuário escreve
+      // Perfil acadêmico público
+      match /profile/{docId} {
+        allow read: if isAuth();
+        allow write: if isOwner(uid);
+      }
+
+      // Leitura de salas por usuário (badge de não lidos)
+      match /roomReads/{roomId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // Presence (online status)
+      match /presence {
+        allow read: if isAuth();
+        allow write: if isOwner(uid);
       }
     }
 
-    // Perfis básicos para busca de destinatário de cards (já existia)
+    // Perfis básicos para busca
     match /user_profiles/{uid} {
       allow read: if isAuth();
       allow write: if isOwner(uid);
     }
 
-    // ===== NOVAS REGRAS — SOCIAL =====
+    // ===== SOCIAL =====
 
     // Posts do feed
     match /posts/{postId} {
@@ -39,65 +50,46 @@ service cloud.firestore {
         && request.resource.data.content is string
         && request.resource.data.content.size() > 0
         && request.resource.data.content.size() <= 2000;
-      // Permite atualizar likes, replies e reportCount por qualquer usuário logado
       allow update: if isAuth() && (
-        // Só pode mudar likes, replies, reportCount — não pode trocar authorId/content
         !('authorId' in request.resource.data.diff(resource.data).affectedKeys()) &&
         !('content'  in request.resource.data.diff(resource.data).affectedKeys())
       );
-      // Só o autor pode deletar
       allow delete: if isAuth() && resource.data.authorId == request.auth.uid;
     }
 
-    // Conexões (following/followers)
+    // Conexões
     match /connections/{uid} {
       allow read: if isAuth();
       allow write: if isOwner(uid);
     }
 
-    // Grupos / Salas
-    match /groups/{groupId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      // Permite atualizar apenas se usuário é membro ou criador
-      allow update: if isAuth() && (
-        resource.data.createdBy == request.auth.uid ||
-        request.auth.uid in resource.data.members
-      );
-      allow delete: if isAuth() && resource.data.createdBy == request.auth.uid;
-    }
-
-    // Notificações — usuário só acessa as próprias
+    // Notificações
     match /notifications/{uid}/items/{notifId} {
       allow read, write: if isOwner(uid);
-      // Permite criar notificações para outros (ex: follow, like)
-      allow create: if isAuth();
+      allow create: if isAuth(); // outros usuários criam notificações
     }
 
-    // Denúncias — qualquer usuário pode criar, só admins lêem (sem admin SDK aqui)
+    // Denúncias
     match /reports/{reportId} {
       allow create: if isAuth();
-      allow read: if false; // apenas via Admin SDK / Cloud Functions
-      allow update, delete: if false;
+      allow read, update, delete: if false;
     }
 
     // ===== TURMAS POR MATÉRIA =====
 
-    // Salas de matéria (criadas automaticamente ao vincular perfil)
     match /subject_rooms/{roomId} {
       allow read: if isAuth();
-      // Qualquer usuário logado pode criar/atualizar salas (para ensureSubjectRoom)
       allow create: if isAuth();
-      allow update: if isAuth(); // memberCount, etc.
-      allow delete: if false;   // salas não são deletadas
+      allow update: if isAuth();
+      allow delete: if false;
 
       // Membros da sala
       match /members/{uid} {
         allow read: if isAuth();
-        allow write: if isOwner(uid); // cada usuário gerencia sua própria inscrição
+        allow write: if isOwner(uid);
       }
 
-      // Posts do mural
+      // Posts do mural (legado — mantido para retrocompatibilidade)
       match /posts/{postId} {
         allow read: if isAuth();
         allow create: if isAuth()
@@ -105,14 +97,46 @@ service cloud.firestore {
           && request.resource.data.content is string
           && request.resource.data.content.size() > 0
           && request.resource.data.content.size() <= 3000;
-        // Likes podem ser atualizados por qualquer membro logado
         allow update: if isAuth() && (
           !('authorId' in request.resource.data.diff(resource.data).affectedKeys()) &&
           !('content'  in request.resource.data.diff(resource.data).affectedKeys())
         );
-        // Só o autor pode deletar o post
         allow delete: if isAuth() && resource.data.authorId == request.auth.uid;
       }
+
+      // Mensagens do chat em tempo real
+      match /messages/{msgId} {
+        allow read: if isAuth() &&
+          exists(/databases/$(database)/documents/subject_rooms/$(roomId)/members/$(request.auth.uid));
+        allow create: if isAuth() &&
+          exists(/databases/$(database)/documents/subject_rooms/$(roomId)/members/$(request.auth.uid)) &&
+          request.resource.data.authorId == request.auth.uid &&
+          request.resource.data.text is string &&
+          request.resource.data.text.size() > 0 &&
+          request.resource.data.text.size() <= 2000;
+        // Apenas o autor pode atualizar (para soft delete)
+        allow update: if isAuth() && resource.data.authorId == request.auth.uid;
+        allow delete: if false; // apenas soft delete via update
+      }
+
+      // Indicadores de digitação (curta duração)
+      match /typing/{uid} {
+        allow read: if isAuth() &&
+          exists(/databases/$(database)/documents/subject_rooms/$(roomId)/members/$(request.auth.uid));
+        allow write: if isOwner(uid);
+      }
     }
+
+    // Grupos legados (mantido para retrocompatibilidade)
+    match /groups/{groupId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth() && (
+        resource.data.createdBy == request.auth.uid ||
+        request.auth.uid in resource.data.members
+      );
+      allow delete: if isAuth() && resource.data.createdBy == request.auth.uid;
+    }
+
   }
 }

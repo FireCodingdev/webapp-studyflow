@@ -1,160 +1,303 @@
 // ===== SOCIAL: GROUPS.JS =====
-// Salas / fóruns por disciplina — NOVO MÓDULO
+// 2025-05-15 — Reescrita completa: lista salas do mesmo curso/período/instituição
+// agrupadas por semestre. Sem criação manual de salas.
 
 import { db, auth } from '../firebase.js';
-
-// CORREÇÃO: import estático no lugar de top-level await
 import {
-  collection, addDoc, getDoc, getDocs, doc, updateDoc,
-  arrayUnion, query, orderBy, limit, serverTimestamp,
+  collection, query, where, getDocs, getDoc, doc, limit, orderBy,
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
-// ---- Criar novo grupo/sala ----
-export async function createGroup({ name, subject, institution }) {
-  
-  const user = auth.currentUser;
-  if (!user) return null;
+import {
+  loadFullAcademicProfile,
+  buildRoomId,
+  ensureSubjectRoom,
+  joinSubjectRoom,
+  isRoomMember,
+  FACAPE_COURSES,
+} from './turmas.js';
 
-  try {
-    const ref = await addDoc(collection(db, 'groups'), {
-      name: name?.trim() || 'Grupo sem nome',
-      subject: subject?.trim() || '',
-      institution: institution?.trim() || '',
-      members: [user.uid],
-      posts: [],
-      createdAt: serverTimestamp(),
-      createdBy: user.uid,
-    });
-    return ref.id;
-  } catch (err) {
-    console.error('[groups] Erro ao criar grupo:', err);
-    return null;
-  }
+function esc(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ---- Entrar em um grupo ----
-export async function joinGroup(groupId) {
-  
-  const user = auth.currentUser;
-  if (!user) return false;
-  try {
-    await updateDoc(doc(db, 'groups', groupId), {
-      members: arrayUnion(user.uid),
-    });
-    return true;
-  } catch (err) {
-    console.error('[groups] Erro ao entrar no grupo:', err);
-    return false;
-  }
+function fmtDate(ts) {
+  if (!ts) return '';
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  const now = new Date();
+  const diff = Math.floor((now - d) / 60000);
+  if (diff < 1)   return 'agora';
+  if (diff < 60)  return `${diff}min`;
+  if (diff < 1440) return `${Math.floor(diff / 60)}h`;
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
 }
 
-// ---- Listar grupos (por disciplina ou todos) ----
-export async function listGroups(subject = null, limitN = 20) {
+// ── Carrega salas do mesmo curso/período/instituição do usuário ───────────────
+async function loadCourseRooms(profile) {
   try {
-    const ref = collection(db, 'groups');
-    const q = query(ref, orderBy('createdAt', 'desc'), limit(limitN));
+    // Consulta por courseId (índice simples criado automaticamente pelo Firestore)
+    const q = query(
+      collection(db, 'subject_rooms'),
+      where('courseId', '==', profile.courseId),
+      limit(60)
+    );
     const snap = await getDocs(q);
-    const groups = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    if (subject) return groups.filter(g => g.subject?.toLowerCase().includes(subject.toLowerCase()));
-    return groups;
+    return snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(r => r.period === profile.period && r.institution === profile.institution);
   } catch (err) {
-    console.error('[groups] Erro ao listar grupos:', err);
+    console.error('[groups] Erro ao carregar salas do curso:', err);
     return [];
   }
 }
 
-// ---- Carregar um grupo por ID ----
-export async function loadGroup(groupId) {
+// ── Busca última mensagem de uma sala ─────────────────────────────────────────
+async function getLastMessage(rId) {
   try {
-    const snap = await getDoc(doc(db, 'groups', groupId));
-    if (!snap.exists()) return null;
-    return { id: snap.id, ...snap.data() };
-  } catch (err) {
-    console.error('[groups] Erro ao carregar grupo:', err);
-    return null;
-  }
+    const q = query(
+      collection(db, 'subject_rooms', rId, 'messages'),
+      orderBy('createdAt', 'desc'),
+      limit(1)
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
+    return snap.docs[0].data();
+  } catch { return null; }
 }
 
-// ---- Renderizar lista de grupos na página social ----
+// ── Renderização da aba Salas ─────────────────────────────────────────────────
 export async function renderGroupsSection(currentUid) {
   const container = document.getElementById('groups-list');
   if (!container) return;
   container.innerHTML = `<div class="feed-loading">⏳ Carregando salas...</div>`;
 
-  const groups = await listGroups();
-  if (!groups.length) {
-    container.innerHTML = `<div class="feed-empty">Nenhuma sala criada ainda. Crie a sua! 🏫</div>`;
-    return;
-  }
+  const profile = await loadFullAcademicProfile(currentUid);
 
-  container.innerHTML = groups.map(g => {
-    const isMember = (g.members || []).includes(currentUid);
-    return `
-      <div class="group-card">
-        <div class="group-card-info">
-          <span class="group-card-name">${escapeHtml(g.name)}</span>
-          <span class="group-card-subject">${escapeHtml(g.subject || 'Geral')}</span>
-          ${g.institution ? `<span class="group-card-inst">🏛 ${escapeHtml(g.institution)}</span>` : ''}
-          <span class="group-card-members">👥 ${(g.members || []).length} membros</span>
-        </div>
-        <button class="user-card-btn ${isMember ? 'btn-secondary' : ''}"
-          onclick="window.handleJoinGroup('${g.id}', this)">
-          ${isMember ? '✔ Membro' : '➕ Entrar'}
+  if (!profile?.courseId || !profile?.period) {
+    container.innerHTML = `
+      <div class="groups-no-profile">
+        <div class="groups-no-profile-icon">🎓</div>
+        <p>Configure seu perfil em <strong>Turmas</strong> para ver as salas do seu curso.</p>
+        <button class="btn-primary" onclick="window.switchSocialTab('turmas')">
+          Ir para Turmas
         </button>
       </div>
     `;
-  }).join('');
+    return;
+  }
+
+  // Carrega salas do curso + verificação de membro em paralelo
+  const courseRooms = await loadCourseRooms(profile);
+
+  if (!courseRooms.length) {
+    container.innerHTML = `
+      <div class="feed-empty">
+        Nenhuma sala encontrada para seu curso e período ainda.
+        Configure suas matérias em <strong>Turmas</strong> para criá-las.
+      </div>
+    `;
+    return;
+  }
+
+  // Verifica membros em paralelo
+  const membershipResults = await Promise.all(
+    courseRooms.map(r => isRoomMember(r.id, currentUid))
+  );
+
+  // Busca última mensagem para preview (em paralelo, com timeout implícito)
+  const lastMsgResults = await Promise.all(
+    courseRooms.map(r => getLastMessage(r.id))
+  );
+
+  // Agrupa por semestre
+  const bySemester = {};
+  courseRooms.forEach((room, i) => {
+    const sem = room.semester || '?';
+    if (!bySemester[sem]) bySemester[sem] = [];
+    bySemester[sem].push({
+      ...room,
+      isMember: membershipResults[i],
+      lastMsg:  lastMsgResults[i],
+    });
+  });
+
+  const course   = FACAPE_COURSES.find(c => c.id === profile.courseId);
+  const sigla    = course?.sigla || profile.courseId || '';
+  const periodLabel = { matutino:'Matutino', vespertino:'Vespertino', noturno:'Noturno', integral:'Integral', ead:'EaD' };
+  const per = periodLabel[profile.period] || profile.period;
+
+  container.innerHTML = `
+    <div class="groups-header-info">
+      <span class="groups-course-label">📚 ${esc(course?.name || profile.courseId)} · ${esc(per)}</span>
+      <span class="groups-total">${courseRooms.length} sala${courseRooms.length !== 1 ? 's' : ''} encontrada${courseRooms.length !== 1 ? 's' : ''}</span>
+    </div>
+    ${Object.keys(bySemester)
+      .sort((a, b) => Number(a) - Number(b))
+      .map(sem => _renderSemesterSection(sem, bySemester[sem], sigla, currentUid, profile))
+      .join('')}
+  `;
 }
 
-// ---- Handler global: entrar em grupo ----
-window.handleJoinGroup = async function(groupId, btn) {
-  const ok = await joinGroup(groupId);
-  if (ok && btn) { btn.textContent = '✔ Membro'; btn.classList.add('btn-secondary'); }
-};
+function _renderSemesterSection(sem, rooms, sigla, uid, profile) {
+  const semLabel = sem === '?' ? 'Sem semestre' : `${sem}º Semestre`;
+  return `
+    <details class="groups-semester-section" open>
+      <summary class="groups-semester-header">
+        <span class="groups-semester-title">${esc(semLabel)}</span>
+        <span class="groups-semester-count">${rooms.length} sala${rooms.length !== 1 ? 's' : ''}</span>
+      </summary>
+      <div class="groups-semester-rooms">
+        ${rooms.map(r => _renderRoomCard(r, uid, profile)).join('')}
+      </div>
+    </details>
+  `;
+}
 
-// ---- Modal: criar novo grupo ----
-window.openCreateGroupModal = function() {
-  const overlay = document.getElementById('modal-overlay');
-  const body = document.getElementById('modal-body');
-  if (!overlay || !body) return;
+function _renderRoomCard(room, uid, profile) {
+  const lastMsgText = room.lastMsg
+    ? `<span class="groups-last-msg">${esc((room.lastMsg.text || '').slice(0, 50))}${(room.lastMsg.text || '').length > 50 ? '…' : ''}</span>
+       <span class="groups-last-time">${fmtDate(room.lastMsg.createdAt)}</span>`
+    : `<span class="groups-last-msg" style="font-style:italic;color:var(--text-muted)">Sem mensagens ainda</span>`;
 
-  body.innerHTML = `
-    <div class="modal-header"><h3>🏫 Nova Sala / Grupo</h3></div>
-    <div class="modal-form">
-      <div class="form-group">
-        <label class="form-label">Nome do Grupo</label>
-        <input id="grp-name" class="form-input" type="text" placeholder="Ex: Cálculo II - UFPE 2025">
+  const actionBtn = room.isMember
+    ? `<button class="btn-primary groups-room-btn" onclick="window._openChat('${room.id}')">Abrir</button>`
+    : `<button class="btn-secondary groups-room-btn" onclick="window._groupsJoinRoom('${room.id}','${esc(room.subjectName)}','${esc(profile.courseId)}',${room.semester || 1},'${esc(profile.period)}', this)">Entrar</button>`;
+
+  return `
+    <div class="groups-room-card" data-room-id="${room.id}">
+      <div class="groups-room-icon">📚</div>
+      <div class="groups-room-info">
+        <div class="groups-room-name">${esc(room.subjectName)}</div>
+        <div class="groups-room-meta">👥 ${room.memberCount || 0} membro${(room.memberCount || 0) !== 1 ? 's' : ''}</div>
+        <div class="groups-room-preview">${lastMsgText}</div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Disciplina</label>
-        <input id="grp-subject" class="form-input" type="text" placeholder="Ex: Cálculo, Física, POO...">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Instituição (opcional)</label>
-        <input id="grp-institution" class="form-input" type="text" placeholder="Ex: UFPE, USP...">
-      </div>
-      <button class="btn-primary" onclick="window.submitCreateGroup()">Criar Sala</button>
+      <div class="groups-room-action">${actionBtn}</div>
     </div>
   `;
-  overlay.classList.add('active');
-  document.getElementById('modal-container')?.classList.add('active');
-};
+}
 
-window.submitCreateGroup = async function() {
-  const name = document.getElementById('grp-name')?.value?.trim();
-  const subject = document.getElementById('grp-subject')?.value?.trim();
-  const institution = document.getElementById('grp-institution')?.value?.trim();
-  if (!name) return;
+// ── Handler: entrar em sala pelo painel Salas ──────────────────────────────────
+window._groupsJoinRoom = async function(rId, subjectName, courseId, semester, period, btn) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
 
-  const id = await createGroup({ name, subject, institution });
-  window.closeModal?.();
-  if (id) {
-    
-    renderGroupsSection(auth.currentUser?.uid);
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+
+  // Garante que a sala existe com os campos corretos
+  const profile = await loadFullAcademicProfile(uid);
+  if (profile) {
+    await ensureSubjectRoom(
+      profile.institution, courseId, semester, period, subjectName, ''
+    );
+  }
+
+  const ok = await joinSubjectRoom(rId, uid);
+
+  if (ok) {
+    showToast(`✅ Você entrou em ${subjectName}!`);
+    // Atualiza o card para mostrar "Abrir"
+    if (btn) {
+      btn.textContent = 'Abrir';
+      btn.className = 'btn-primary groups-room-btn';
+      btn.onclick = () => window._openChat(rId);
+      btn.disabled = false;
+    }
+    // Recarrega turmas tab para incluir a nova sala
+    const { renderTurmasTab } = await import('./turmas.js');
+    // não bloqueia a UI — dispara em background
+    renderTurmasTab(uid).catch(() => {});
+  } else {
+    showToast('Erro ao entrar na sala. Tente novamente.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Entrar'; }
   }
 };
 
-function escapeHtml(str) {
-  return String(str || '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+// ── CSS injetado para a aba Salas ─────────────────────────────────────────────
+(function _injectGroupsStyles() {
+  if (document.getElementById('groups-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'groups-styles';
+  style.textContent = `
+    .groups-no-profile {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-muted, #888);
+    }
+    .groups-no-profile-icon { font-size: 40px; margin-bottom: 12px; }
+    .groups-no-profile p { margin-bottom: 16px; font-size: 14px; line-height: 1.5; }
+
+    .groups-header-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0 12px;
+      font-size: 13px;
+      color: var(--text-muted, #888);
+    }
+    .groups-course-label { font-weight: 600; color: var(--text, #e0e0e0); }
+
+    .groups-semester-section {
+      margin-bottom: 12px;
+      border: 1px solid var(--border, #2a2a3e);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .groups-semester-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 14px;
+      cursor: pointer;
+      background: var(--bg-secondary, #1a1a2e);
+      list-style: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .groups-semester-header::-webkit-details-marker { display: none; }
+    .groups-semester-title { font-weight: 600; font-size: 14px; }
+    .groups-semester-count { font-size: 12px; color: var(--text-muted, #888); }
+    .groups-semester-rooms { padding: 8px 0; }
+
+    .groups-room-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border, #2a2a3e);
+    }
+    .groups-room-card:last-child { border-bottom: none; }
+    .groups-room-icon { font-size: 22px; flex-shrink: 0; }
+    .groups-room-info { flex: 1; min-width: 0; }
+    .groups-room-name {
+      font-weight: 600;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .groups-room-meta { font-size: 12px; color: var(--text-muted, #888); margin-top: 1px; }
+    .groups-room-preview {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 3px;
+    }
+    .groups-last-msg {
+      font-size: 12px;
+      color: var(--text-muted, #888);
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .groups-last-time { font-size: 11px; color: var(--text-muted, #888); flex-shrink: 0; }
+    .groups-room-action { flex-shrink: 0; }
+    .groups-room-btn {
+      padding: 6px 14px;
+      font-size: 13px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+  `;
+  document.head.appendChild(style);
+})();

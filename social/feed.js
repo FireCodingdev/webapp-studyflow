@@ -1,88 +1,205 @@
 // ===== SOCIAL: FEED.JS =====
-// Timeline / Feed Central — NOVO MÓDULO
-// Renderiza posts do Firestore na página #page-feed
+// 2025-05-15 — Refatorado: queries duplas por curso/período, campos acadêmicos
+// nos posts, seções separadas "Da sua turma" e "Comunidade".
 
 import { db, auth } from '../firebase.js';
 import { renderPostCard } from '../components/post-card.js';
-
-// CORREÇÃO: import estático no lugar de top-level await
 import {
   collection, query, orderBy, limit, onSnapshot,
-  addDoc, serverTimestamp, where, getDocs,
+  addDoc, serverTimestamp, where, getDocs, getDoc, doc,
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
-let _feedUnsubscribe = null;
-let _feedState = null;
+import { loadFullAcademicProfile, FACAPE_COURSES } from './turmas.js';
 
-// ---- Inicializa o módulo de Feed ----
+let _feedUnsubscribe = null;
+
 export function initFeed(STATE, helpers) {
-  _feedState = { STATE, helpers };
-  window._initFeed = initFeed;
   window._renderFeed = renderFeed;
 }
 
-// ---- Renderiza o feed (chamada pelo navigateTo) ----
+// ── Carrega perfil acadêmico do usuário atual ─────────────────────────────────
+async function _getMyAcademicProfile(uid) {
+  try {
+    return await loadFullAcademicProfile(uid);
+  } catch { return null; }
+}
+
+// ── Renderiza o feed (duas seções: turma e comunidade) ────────────────────────
 export async function renderFeed() {
   const container = document.getElementById('feed-list');
   if (!container) return;
   container.innerHTML = `<div class="feed-loading">⏳ Carregando posts...</div>`;
 
-  // Cancela listener anterior
   if (_feedUnsubscribe) { _feedUnsubscribe(); _feedUnsubscribe = null; }
 
-
   const user = auth.currentUser;
-  if (!user) { container.innerHTML = `<p class="feed-empty">Faça login para ver o feed.</p>`; return; }
+  if (!user) {
+    container.innerHTML = `<p class="feed-empty">Faça login para ver o feed.</p>`;
+    return;
+  }
 
-  const postsQuery = query(
+  const profile = await _getMyAcademicProfile(user.uid);
+
+  if (!profile?.courseId) {
+    // Sem perfil: mostra feed público geral
+    _subscribePublicFeed(container, user.uid);
+    return;
+  }
+
+  // Com perfil: carrega duas queries e mescla
+  _subscribeAcademicFeed(container, user.uid, profile);
+}
+
+function _subscribePublicFeed(container, uid) {
+  const q = query(
     collection(db, 'posts'),
+    where('visibility', '==', 'public'),
     orderBy('createdAt', 'desc'),
     limit(30)
   );
-
-  _feedUnsubscribe = onSnapshot(postsQuery, (snap) => {
+  _feedUnsubscribe = onSnapshot(q, (snap) => {
     if (snap.empty) {
-      container.innerHTML = `<div class="feed-empty">Nenhum post ainda. Seja o primeiro a compartilhar! 🚀</div>`;
+      container.innerHTML = `<div class="feed-empty">Nenhum post ainda. Seja o primeiro! 🚀</div>`;
       return;
     }
     const posts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    container.innerHTML = posts.map(p => renderPostCard(p, user.uid)).join('');
+    container.innerHTML = `
+      <div class="feed-section-label community">🌍 Comunidade</div>
+      ${posts.map(p => renderPostCard(p, uid)).join('')}
+    `;
   }, (err) => {
-    console.error('[feed] Erro ao ouvir posts:', err);
-    container.innerHTML = `<div class="feed-empty">Erro ao carregar feed. Verifique sua conexão.</div>`;
+    console.error('[feed] Erro:', err);
+    container.innerHTML = `<div class="feed-empty">Erro ao carregar. Verifique sua conexão.</div>`;
   });
 }
 
-// ---- Publicar novo post ----
-export async function publishPost({ type, content, subjectId, visibility }) {
+function _subscribeAcademicFeed(container, uid, profile) {
+  let turmaPostsCache = [];
+  let communityPostsCache = [];
+  let unsubTurma = null;
+  let unsubComm  = null;
 
+  function _render() {
+    // Mescla e deduplica por id
+    const all = [...turmaPostsCache];
+    const turmaIds = new Set(turmaPostsCache.map(p => p.id));
+    communityPostsCache.forEach(p => { if (!turmaIds.has(p.id)) all.push(p); });
+
+    if (!all.length) {
+      container.innerHTML = `<div class="feed-empty">Nenhum post ainda. Seja o primeiro! 🚀</div>`;
+      return;
+    }
+
+    const turma     = turmaPostsCache.slice().sort((a, b) => _ts(b) - _ts(a));
+    const community = communityPostsCache
+      .filter(p => !turmaIds.has(p.id))
+      .sort((a, b) => _ts(b) - _ts(a));
+
+    let html = '';
+    if (turma.length) {
+      html += `<div class="feed-section-label turma">📌 Da sua turma</div>`;
+      html += turma.map(p => renderPostCard(p, uid)).join('');
+    }
+    if (community.length) {
+      html += `<div class="feed-section-label community">🌍 Comunidade</div>`;
+      html += community.map(p => renderPostCard(p, uid)).join('');
+    }
+
+    container.innerHTML = html;
+  }
+
+  // Query 1: posts do mesmo curso + período
+  const qTurma = query(
+    collection(db, 'posts'),
+    where('courseId', '==', profile.courseId),
+    where('period',   '==', profile.period),
+    orderBy('createdAt', 'desc'),
+    limit(20)
+  );
+  unsubTurma = onSnapshot(qTurma, (snap) => {
+    turmaPostsCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    _render();
+  }, (err) => {
+    console.warn('[feed] Query turma error (índice faltando?):', err.message);
+    // Fallback: sem filtro de turma
+    turmaPostsCache = [];
+    _render();
+  });
+
+  // Query 2: posts públicos gerais
+  const qComm = query(
+    collection(db, 'posts'),
+    where('visibility', '==', 'public'),
+    orderBy('createdAt', 'desc'),
+    limit(30)
+  );
+  unsubComm = onSnapshot(qComm, (snap) => {
+    communityPostsCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    _render();
+  }, (err) => {
+    console.error('[feed] Query community error:', err);
+  });
+
+  // Agrupa os dois unsubs em um único
+  _feedUnsubscribe = () => { unsubTurma?.(); unsubComm?.(); };
+}
+
+function _ts(post) {
+  if (!post.createdAt) return 0;
+  return post.createdAt.toDate ? post.createdAt.toDate().getTime() : new Date(post.createdAt).getTime();
+}
+
+// ── Publicar novo post (com campos acadêmicos) ────────────────────────────────
+export async function publishPost({ type, content, subjectId, visibility }) {
   const user = auth.currentUser;
   if (!user || !content?.trim()) return null;
 
+  const profile = await _getMyAcademicProfile(user.uid);
+  const course  = FACAPE_COURSES.find(c => c.id === profile?.courseId);
+
   try {
     const ref = await addDoc(collection(db, 'posts'), {
-      authorId: user.uid,
-      authorName: user.displayName || user.email.split('@')[0],
-      type: type || 'doubt',          // "doubt"|"material"|"achievement"|"flashcard"
-      content: content.trim(),
-      subjectId: subjectId || '',
-      likes: 0,
-      replies: [],
-      visibility: visibility || 'public',
-      createdAt: serverTimestamp(),
+      authorId:    user.uid,
+      authorName:  user.displayName || user.email.split('@')[0],
+      type:        type || 'doubt',
+      content:     content.trim(),
+      subjectId:   subjectId || '',
+      likes:       0,
+      replies:     [],
+      visibility:  visibility || 'public',
+      createdAt:   serverTimestamp(),
+      // Campos acadêmicos do autor
+      institution: profile?.institution || '',
+      courseId:    profile?.courseId    || '',
+      course:      profile?.course      || '',
+      courseSigla: course?.sigla        || '',
+      semester:    profile?.semester    || 0,
+      period:      profile?.period      || '',
     });
     return ref.id;
   } catch (err) {
-    console.error('[feed] Erro ao publicar post:', err);
+    console.error('[feed] Erro ao publicar:', err);
     return null;
   }
 }
 
-// ---- Abrir modal de criação de post ----
-window.openNewPostModal = function() {
+// ── Modal: novo post ──────────────────────────────────────────────────────────
+window.openNewPostModal = async function() {
   const overlay = document.getElementById('modal-overlay');
-  const body = document.getElementById('modal-body');
+  const body    = document.getElementById('modal-body');
   if (!overlay || !body) return;
+
+  const user = auth.currentUser;
+  if (!user) return;
+
+  // Carrega matérias do perfil para o seletor
+  const profile = await _getMyAcademicProfile(user.uid);
+  const subjects = profile?.subjects || [];
+
+  const subjectOptions = subjects.length
+    ? `<option value="">Nenhuma (geral)</option>` +
+      subjects.map(s => `<option value="${_esc(s.name)}">${_esc(s.name)}</option>`).join('')
+    : `<option value="">Sem matérias configuradas</option>`;
 
   body.innerHTML = `
     <div class="modal-header"><h3>📝 Novo Post</h3></div>
@@ -97,16 +214,22 @@ window.openNewPostModal = function() {
         </select>
       </div>
       <div class="form-group">
+        <label class="form-label">Matéria vinculada (opcional)</label>
+        <select id="post-subject" class="form-input">
+          ${subjectOptions}
+        </select>
+      </div>
+      <div class="form-group">
         <label class="form-label">Visibilidade</label>
         <select id="post-visibility" class="form-input">
           <option value="public">🌍 Público</option>
           <option value="connections">👥 Conexões</option>
-          <option value="group">🏫 Grupo</option>
         </select>
       </div>
       <div class="form-group">
         <label class="form-label">Conteúdo</label>
-        <textarea id="post-content" class="form-input" rows="4" placeholder="Compartilhe uma dúvida, material ou conquista..."></textarea>
+        <textarea id="post-content" class="form-input" rows="4"
+          placeholder="Compartilhe uma dúvida, material ou conquista..."></textarea>
       </div>
       <button class="btn-primary" onclick="window.submitNewPost()">Publicar</button>
     </div>
@@ -116,16 +239,54 @@ window.openNewPostModal = function() {
 };
 
 window.submitNewPost = async function() {
-  const type = document.getElementById('post-type')?.value;
+  const type       = document.getElementById('post-type')?.value;
+  const subjectId  = document.getElementById('post-subject')?.value;
   const visibility = document.getElementById('post-visibility')?.value;
-  const content = document.getElementById('post-content')?.value;
+  const content    = document.getElementById('post-content')?.value;
   if (!content?.trim()) return;
 
-  const id = await publishPost({ type, content, visibility });
+  const id = await publishPost({ type, content, subjectId, visibility });
   window.closeModal?.();
   if (id) {
     renderFeed();
     const toastEl = document.getElementById('toast');
-    if (toastEl) { toastEl.textContent = '✅ Post publicado!'; toastEl.classList.add('show'); setTimeout(() => toastEl.classList.remove('show'), 2500); }
+    if (toastEl) {
+      toastEl.textContent = '✅ Post publicado!';
+      toastEl.classList.add('show');
+      setTimeout(() => toastEl.classList.remove('show'), 2500);
+    }
   }
 };
+
+function _esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── CSS das seções do feed ────────────────────────────────────────────────────
+(function _injectFeedStyles() {
+  if (document.getElementById('feed-section-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'feed-section-styles';
+  style.textContent = `
+    .feed-section-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      padding: 10px 4px 6px;
+      color: var(--text-muted, #888);
+      text-transform: uppercase;
+    }
+    .feed-section-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border, #2a2a3e);
+    }
+    .feed-section-label.turma    { color: var(--accent, #7c5cfc); }
+    .feed-section-label.community { color: #888; }
+  `;
+  document.head.appendChild(style);
+})();

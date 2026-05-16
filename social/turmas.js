@@ -1,7 +1,6 @@
 // ===== SOCIAL: TURMAS.JS =====
-// Sistema de Turmas vinculadas à FACAPE – Faculdade de Petrolina.
-// Alunos selecionam curso/matérias e entram em grupos pré-existentes.
-// IA analisa imagens de grade curricular para extração automática de matérias.
+// 2025-05-15 — Redesign completo: roomId corrigido com period/semester/courseId,
+// chat em tempo real estilo WhatsApp, badges de não lidos, presence, typing.
 
 import { db, auth } from '../firebase.js';
 
@@ -12,201 +11,165 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ── Estado local ──────────────────────────────────────────────────────────────
-let _unsubMural = null;
-let _currentRoomId = null;
+let _unsubChat    = null;
+let _unsubTyping  = null;
+let _currentChatRoomId = null;
+let _presenceInterval  = null;
+let _typingClearTimeout = null;
+let _roomBadgeListeners = {};
+let _unreadCounts = {};
 
 // ── Dados da FACAPE ───────────────────────────────────────────────────────────
-// Fonte: https://facape.otimizeit.com.br/graduacao-pos/
-export const FACAPE_INSTITUTION = 'FACAPE';
+export const FACAPE_INSTITUTION  = 'FACAPE';
 export const FACAPE_DISPLAY_NAME = 'FACAPE – Faculdade de Petrolina';
 
 export const FACAPE_COURSES = [
   {
-    id: 'med',
-    name: 'Medicina',
-    sigla: 'MED',
-    tipo: 'Bacharelado',
-    semestres: 12,
+    id: 'med', name: 'Medicina', sigla: 'MED', tipo: 'Bacharelado', semestres: 12,
     periodo: ['integral'],
     subjects: {
-      1: ['Bioquímica', 'Biologia Celular e Molecular', 'Anatomia Humana I', 'Histologia', 'Introdução à Medicina'],
-      2: ['Anatomia Humana II', 'Fisiologia I', 'Biofísica', 'Imunologia', 'Psicologia Médica'],
-      3: ['Fisiologia II', 'Microbiologia', 'Parasitologia', 'Genética Médica', 'Semiologia I'],
-      4: ['Farmacologia I', 'Patologia Geral', 'Semiologia II', 'Saúde Coletiva I', 'Epidemiologia'],
-      5: ['Farmacologia II', 'Fisiopatologia', 'Clínica Médica I', 'Saúde Coletiva II', 'Bioética'],
-      6: ['Clínica Médica II', 'Cirurgia Geral I', 'Ginecologia e Obstetrícia I', 'Pediatria I', 'Urgência e Emergência I'],
-      7: ['Clínica Médica III', 'Cirurgia Geral II', 'Ginecologia e Obstetrícia II', 'Pediatria II', 'Ortopedia e Traumatologia'],
-      8: ['Neurologia', 'Psiquiatria', 'Dermatologia', 'Oftalmologia', 'Otorrinolaringologia'],
-      9: ['Medicina de Família e Comunidade', 'Urgência e Emergência II', 'Medicina Legal', 'Geriatria', 'Eletiva I'],
-      10: ['Internato em Clínica Médica I', 'Internato em Cirurgia I', 'Internato em Pediatria I', 'Internato em GO I', 'Internato em Saúde Coletiva I'],
-      11: ['Internato em Clínica Médica II', 'Internato em Cirurgia II', 'Internato em Pediatria II', 'Internato em GO II', 'Internato em Saúde Coletiva II'],
-      12: ['Internato em Clínica Médica III', 'Internato em Cirurgia III', 'Internato em Urgência/Emergência', 'Internato em Saúde Mental', 'TCC'],
+      1:  ['Bioquímica','Biologia Celular e Molecular','Anatomia Humana I','Histologia','Introdução à Medicina'],
+      2:  ['Anatomia Humana II','Fisiologia I','Biofísica','Imunologia','Psicologia Médica'],
+      3:  ['Fisiologia II','Microbiologia','Parasitologia','Genética Médica','Semiologia I'],
+      4:  ['Farmacologia I','Patologia Geral','Semiologia II','Saúde Coletiva I','Epidemiologia'],
+      5:  ['Farmacologia II','Fisiopatologia','Clínica Médica I','Saúde Coletiva II','Bioética'],
+      6:  ['Clínica Médica II','Cirurgia Geral I','Ginecologia e Obstetrícia I','Pediatria I','Urgência e Emergência I'],
+      7:  ['Clínica Médica III','Cirurgia Geral II','Ginecologia e Obstetrícia II','Pediatria II','Ortopedia e Traumatologia'],
+      8:  ['Neurologia','Psiquiatria','Dermatologia','Oftalmologia','Otorrinolaringologia'],
+      9:  ['Medicina de Família e Comunidade','Urgência e Emergência II','Medicina Legal','Geriatria','Eletiva I'],
+      10: ['Internato em Clínica Médica I','Internato em Cirurgia I','Internato em Pediatria I','Internato em GO I','Internato em Saúde Coletiva I'],
+      11: ['Internato em Clínica Médica II','Internato em Cirurgia II','Internato em Pediatria II','Internato em GO II','Internato em Saúde Coletiva II'],
+      12: ['Internato em Clínica Médica III','Internato em Cirurgia III','Internato em Urgência/Emergência','Internato em Saúde Mental','TCC'],
     },
   },
   {
-    id: 'adm',
-    name: 'Administração',
-    sigla: 'ADM',
-    tipo: 'Bacharelado',
-    semestres: 8,
-    periodo: ['matutino', 'noturno'],
+    id: 'adm', name: 'Administração', sigla: 'ADM', tipo: 'Bacharelado', semestres: 8,
+    periodo: ['matutino','noturno'],
     subjects: {
-      1: ['Introdução à Administração', 'Fundamentos de Contabilidade', 'Matemática Aplicada', 'Comunicação Empresarial', 'Sociologia das Organizações'],
-      2: ['Teoria Geral da Administração', 'Contabilidade Gerencial', 'Estatística Aplicada', 'Economia I', 'Direito Empresarial'],
-      3: ['Comportamento Organizacional', 'Gestão de Marketing', 'Economia II', 'Metodologia Científica', 'Gestão de Pessoas I'],
-      4: ['Gestão Financeira I', 'Gestão de Operações', 'Pesquisa de Marketing', 'Gestão de Pessoas II', 'Ética e Responsabilidade Social'],
-      5: ['Gestão Financeira II', 'Gestão Estratégica I', 'Comércio Exterior', 'Gestão Ambiental', 'Empreendedorismo'],
-      6: ['Gestão Estratégica II', 'Gestão de Projetos', 'Consultoria Empresarial', 'Logística e Cadeia de Suprimentos', 'Tópicos em Administração'],
-      7: ['Administração Pública', 'Gestão do Conhecimento', 'Negócios Internacionais', 'Estágio Supervisionado I', 'TCC I'],
-      8: ['Liderança e Inovação', 'Governança Corporativa', 'Tópicos Avançados em Adm.', 'Estágio Supervisionado II', 'TCC II'],
+      1: ['Introdução à Administração','Fundamentos de Contabilidade','Matemática Aplicada','Comunicação Empresarial','Sociologia das Organizações'],
+      2: ['Teoria Geral da Administração','Contabilidade Gerencial','Estatística Aplicada','Economia I','Direito Empresarial'],
+      3: ['Comportamento Organizacional','Gestão de Marketing','Economia II','Metodologia Científica','Gestão de Pessoas I'],
+      4: ['Gestão Financeira I','Gestão de Operações','Pesquisa de Marketing','Gestão de Pessoas II','Ética e Responsabilidade Social'],
+      5: ['Gestão Financeira II','Gestão Estratégica I','Comércio Exterior','Gestão Ambiental','Empreendedorismo'],
+      6: ['Gestão Estratégica II','Gestão de Projetos','Consultoria Empresarial','Logística e Cadeia de Suprimentos','Tópicos em Administração'],
+      7: ['Administração Pública','Gestão do Conhecimento','Negócios Internacionais','Estágio Supervisionado I','TCC I'],
+      8: ['Liderança e Inovação','Governança Corporativa','Tópicos Avançados em Adm.','Estágio Supervisionado II','TCC II'],
     },
   },
   {
-    id: 'cc_comp',
-    name: 'Ciência da Computação',
-    sigla: 'CC',
-    tipo: 'Bacharelado',
-    semestres: 8,
-    periodo: ['matutino', 'noturno'],
+    id: 'cc_comp', name: 'Ciência da Computação', sigla: 'CC', tipo: 'Bacharelado', semestres: 8,
+    periodo: ['matutino','noturno'],
     subjects: {
-      1: ['Algoritmos e Programação I', 'Matemática Discreta', 'Cálculo I', 'Introdução à Computação', 'Comunicação e Expressão'],
-      2: ['Algoritmos e Programação II', 'Álgebra Linear', 'Cálculo II', 'Arquitetura de Computadores', 'Física para Computação'],
-      3: ['Estruturas de Dados', 'Banco de Dados I', 'Probabilidade e Estatística', 'Programação Orientada a Objetos', 'Sistemas Operacionais'],
-      4: ['Banco de Dados II', 'Redes de Computadores', 'Teoria da Computação', 'Engenharia de Software I', 'Análise e Projeto de Sistemas'],
-      5: ['Compiladores', 'Inteligência Artificial', 'Engenharia de Software II', 'Computação Gráfica', 'Tópicos em Computação I'],
-      6: ['Segurança da Informação', 'Computação em Nuvem', 'Desenvolvimento Web', 'Sistemas Distribuídos', 'Tópicos em Computação II'],
-      7: ['Desenvolvimento Mobile', 'Governança de TI', 'Eletiva I', 'Estágio Supervisionado I', 'TCC I'],
-      8: ['Empreendedorismo em TI', 'Eletiva II', 'Eletiva III', 'Estágio Supervisionado II', 'TCC II'],
+      1: ['Algoritmos e Programação I','Matemática Discreta','Cálculo I','Introdução à Computação','Comunicação e Expressão'],
+      2: ['Algoritmos e Programação II','Álgebra Linear','Cálculo II','Arquitetura de Computadores','Física para Computação'],
+      3: ['Estruturas de Dados','Banco de Dados I','Probabilidade e Estatística','Programação Orientada a Objetos','Sistemas Operacionais'],
+      4: ['Banco de Dados II','Redes de Computadores','Teoria da Computação','Engenharia de Software I','Análise e Projeto de Sistemas'],
+      5: ['Compiladores','Inteligência Artificial','Engenharia de Software II','Computação Gráfica','Tópicos em Computação I'],
+      6: ['Segurança da Informação','Computação em Nuvem','Desenvolvimento Web','Sistemas Distribuídos','Tópicos em Computação II'],
+      7: ['Desenvolvimento Mobile','Governança de TI','Eletiva I','Estágio Supervisionado I','TCC I'],
+      8: ['Empreendedorismo em TI','Eletiva II','Eletiva III','Estágio Supervisionado II','TCC II'],
     },
   },
   {
-    id: 'cont',
-    name: 'Ciências Contábeis',
-    sigla: 'CONT',
-    tipo: 'Bacharelado',
-    semestres: 8,
-    periodo: ['matutino', 'noturno'],
+    id: 'cont', name: 'Ciências Contábeis', sigla: 'CONT', tipo: 'Bacharelado', semestres: 8,
+    periodo: ['matutino','noturno'],
     subjects: {
-      1: ['Contabilidade Introdutória', 'Teoria da Contabilidade', 'Matemática Financeira', 'Português Instrumental', 'Direito I'],
-      2: ['Contabilidade Intermediária', 'Análise das Demonstrações Financeiras', 'Estatística', 'Direito II', 'Economia'],
-      3: ['Contabilidade Avançada', 'Auditoria Contábil', 'Gestão de Custos', 'Direito Tributário', 'Metodologia Científica'],
-      4: ['Contabilidade Gerencial', 'Perícia Contábil', 'Controladoria', 'Legislação Tributária', 'Ética Profissional'],
-      5: ['Contabilidade Pública I', 'Sistemas de Informação Contábil', 'Finanças Corporativas', 'Gestão Tributária', 'Contabilidade Internacional'],
-      6: ['Contabilidade Pública II', 'Planejamento Tributário', 'Mercado de Capitais', 'Gestão Financeira', 'Tópicos em Ciências Contábeis'],
-      7: ['Auditoria Avançada', 'Contabilidade Ambiental', 'Análise de Investimentos', 'Estágio Supervisionado I', 'TCC I'],
-      8: ['Tópicos Contábeis Avançados', 'Consultoria Contábil', 'Governança e Compliance', 'Estágio Supervisionado II', 'TCC II'],
+      1: ['Contabilidade Introdutória','Teoria da Contabilidade','Matemática Financeira','Português Instrumental','Direito I'],
+      2: ['Contabilidade Intermediária','Análise das Demonstrações Financeiras','Estatística','Direito II','Economia'],
+      3: ['Contabilidade Avançada','Auditoria Contábil','Gestão de Custos','Direito Tributário','Metodologia Científica'],
+      4: ['Contabilidade Gerencial','Perícia Contábil','Controladoria','Legislação Tributária','Ética Profissional'],
+      5: ['Contabilidade Pública I','Sistemas de Informação Contábil','Finanças Corporativas','Gestão Tributária','Contabilidade Internacional'],
+      6: ['Contabilidade Pública II','Planejamento Tributário','Mercado de Capitais','Gestão Financeira','Tópicos em Ciências Contábeis'],
+      7: ['Auditoria Avançada','Contabilidade Ambiental','Análise de Investimentos','Estágio Supervisionado I','TCC I'],
+      8: ['Tópicos Contábeis Avançados','Consultoria Contábil','Governança e Compliance','Estágio Supervisionado II','TCC II'],
     },
   },
   {
-    id: 'comex',
-    name: 'Comércio Exterior',
-    sigla: 'COMEX',
-    tipo: 'Bacharelado',
-    semestres: 8,
-    periodo: ['matutino', 'noturno'],
+    id: 'comex', name: 'Comércio Exterior', sigla: 'COMEX', tipo: 'Bacharelado', semestres: 8,
+    periodo: ['matutino','noturno'],
     subjects: {
-      1: ['Introdução ao Comércio Exterior', 'Economia Internacional I', 'Matemática Financeira', 'Comunicação Empresarial', 'Introdução ao Direito'],
-      2: ['Logística Internacional', 'Economia Internacional II', 'Contabilidade Geral', 'Direito Aduaneiro', 'Inglês Instrumental I'],
-      3: ['Despacho Aduaneiro', 'Gestão de Operações Portuárias', 'Finanças Internacionais I', 'Direito Internacional', 'Inglês Instrumental II'],
-      4: ['Transporte Internacional', 'Finanças Internacionais II', 'Câmbio e Pagamentos Internacionais', 'Negociação Internacional', 'Espanhol para Negócios'],
-      5: ['Gestão de Exportação', 'Gestão de Importação', 'Marketing Internacional', 'Tributação no Comércio Exterior', 'Análise de Risco em Comércio Exterior'],
-      6: ['Geopolítica e Relações Internacionais', 'Blocos Econômicos', 'Gestão Aduaneira', 'Empreendedorismo Internacional', 'Tópicos em Comércio Exterior'],
-      7: ['Estratégia de Negócios Internacionais', 'Eletiva I', 'Eletiva II', 'Estágio Supervisionado I', 'TCC I'],
-      8: ['Tendências do Comércio Global', 'Eletiva III', 'Eletiva IV', 'Estágio Supervisionado II', 'TCC II'],
+      1: ['Introdução ao Comércio Exterior','Economia Internacional I','Matemática Financeira','Comunicação Empresarial','Introdução ao Direito'],
+      2: ['Logística Internacional','Economia Internacional II','Contabilidade Geral','Direito Aduaneiro','Inglês Instrumental I'],
+      3: ['Despacho Aduaneiro','Gestão de Operações Portuárias','Finanças Internacionais I','Direito Internacional','Inglês Instrumental II'],
+      4: ['Transporte Internacional','Finanças Internacionais II','Câmbio e Pagamentos Internacionais','Negociação Internacional','Espanhol para Negócios'],
+      5: ['Gestão de Exportação','Gestão de Importação','Marketing Internacional','Tributação no Comércio Exterior','Análise de Risco em Comércio Exterior'],
+      6: ['Geopolítica e Relações Internacionais','Blocos Econômicos','Gestão Aduaneira','Empreendedorismo Internacional','Tópicos em Comércio Exterior'],
+      7: ['Estratégia de Negócios Internacionais','Eletiva I','Eletiva II','Estágio Supervisionado I','TCC I'],
+      8: ['Tendências do Comércio Global','Eletiva III','Eletiva IV','Estágio Supervisionado II','TCC II'],
     },
   },
   {
-    id: 'dire',
-    name: 'Direito',
-    sigla: 'DIR',
-    tipo: 'Bacharelado',
-    semestres: 10,
-    periodo: ['matutino', 'noturno'],
+    id: 'dire', name: 'Direito', sigla: 'DIR', tipo: 'Bacharelado', semestres: 10,
+    periodo: ['matutino','noturno'],
     subjects: {
-      1: ['Introdução ao Direito', 'Direito Constitucional I', 'Direito Civil I', 'Sociologia Jurídica', 'Metodologia do Trabalho Científico'],
-      2: ['Direito Constitucional II', 'Direito Civil II', 'Direito Penal I', 'Teoria Geral do Processo', 'Filosofia do Direito'],
-      3: ['Direito Civil III', 'Direito Penal II', 'Direito Processual Civil I', 'Direito Administrativo I', 'Direito Tributário I'],
-      4: ['Direito Civil IV', 'Direito Penal III', 'Direito Processual Civil II', 'Direito Administrativo II', 'Direito Tributário II'],
-      5: ['Direito do Trabalho I', 'Direito Processual Penal I', 'Direito Empresarial I', 'Direito Previdenciário', 'Ética Profissional'],
-      6: ['Direito do Trabalho II', 'Direito Processual Penal II', 'Direito Empresarial II', 'Direito Internacional', 'Prática Jurídica I'],
-      7: ['Direito Ambiental', 'Direitos Humanos', 'Direito do Consumidor', 'Eletiva I', 'Prática Jurídica II'],
-      8: ['Direito Imobiliário', 'Arbitragem e Mediação', 'Criminologia', 'Eletiva II', 'Prática Jurídica III'],
-      9: ['Tópicos em Direito', 'Eletiva III', 'Estágio Supervisionado I', 'Monografia I', 'Prática Jurídica IV'],
-      10: ['Eletiva IV', 'Estágio Supervisionado II', 'Monografia II', 'Prática Jurídica V', 'Atividades Complementares'],
+      1:  ['Introdução ao Direito','Direito Constitucional I','Direito Civil I','Sociologia Jurídica','Metodologia do Trabalho Científico'],
+      2:  ['Direito Constitucional II','Direito Civil II','Direito Penal I','Teoria Geral do Processo','Filosofia do Direito'],
+      3:  ['Direito Civil III','Direito Penal II','Direito Processual Civil I','Direito Administrativo I','Direito Tributário I'],
+      4:  ['Direito Civil IV','Direito Penal III','Direito Processual Civil II','Direito Administrativo II','Direito Tributário II'],
+      5:  ['Direito do Trabalho I','Direito Processual Penal I','Direito Empresarial I','Direito Previdenciário','Ética Profissional'],
+      6:  ['Direito do Trabalho II','Direito Processual Penal II','Direito Empresarial II','Direito Internacional','Prática Jurídica I'],
+      7:  ['Direito Ambiental','Direitos Humanos','Direito do Consumidor','Eletiva I','Prática Jurídica II'],
+      8:  ['Direito Imobiliário','Arbitragem e Mediação','Criminologia','Eletiva II','Prática Jurídica III'],
+      9:  ['Tópicos em Direito','Eletiva III','Estágio Supervisionado I','Monografia I','Prática Jurídica IV'],
+      10: ['Eletiva IV','Estágio Supervisionado II','Monografia II','Prática Jurídica V','Atividades Complementares'],
     },
   },
   {
-    id: 'eco',
-    name: 'Economia',
-    sigla: 'ECO',
-    tipo: 'Bacharelado',
-    semestres: 8,
-    periodo: ['matutino', 'noturno'],
+    id: 'eco', name: 'Economia', sigla: 'ECO', tipo: 'Bacharelado', semestres: 8,
+    periodo: ['matutino','noturno'],
     subjects: {
-      1: ['Introdução à Economia', 'Matemática I', 'Contabilidade Social', 'Sociologia Econômica', 'Comunicação e Expressão'],
-      2: ['Microeconomia I', 'Matemática II', 'Estatística I', 'História do Pensamento Econômico', 'Introdução à Administração'],
-      3: ['Microeconomia II', 'Macroeconomia I', 'Estatística II', 'Econometria I', 'Metodologia Científica'],
-      4: ['Macroeconomia II', 'Econometria II', 'Economia Brasileira I', 'Finanças Públicas', 'Direito Econômico'],
-      5: ['Economia Internacional', 'Economia Brasileira II', 'Economia do Setor Público', 'Desenvolvimento Econômico', 'Moeda e Bancos'],
-      6: ['Economia Regional e Urbana', 'Mercado de Capitais', 'Economia Agrícola', 'Análise de Projetos', 'Tópicos em Economia I'],
-      7: ['Economia Ambiental', 'Gestão Econômica', 'Eletiva I', 'Estágio Supervisionado I', 'TCC I'],
-      8: ['Tópicos em Economia II', 'Eletiva II', 'Eletiva III', 'Estágio Supervisionado II', 'TCC II'],
+      1: ['Introdução à Economia','Matemática I','Contabilidade Social','Sociologia Econômica','Comunicação e Expressão'],
+      2: ['Microeconomia I','Matemática II','Estatística I','História do Pensamento Econômico','Introdução à Administração'],
+      3: ['Microeconomia II','Macroeconomia I','Estatística II','Econometria I','Metodologia Científica'],
+      4: ['Macroeconomia II','Econometria II','Economia Brasileira I','Finanças Públicas','Direito Econômico'],
+      5: ['Economia Internacional','Economia Brasileira II','Economia do Setor Público','Desenvolvimento Econômico','Moeda e Bancos'],
+      6: ['Economia Regional e Urbana','Mercado de Capitais','Economia Agrícola','Análise de Projetos','Tópicos em Economia I'],
+      7: ['Economia Ambiental','Gestão Econômica','Eletiva I','Estágio Supervisionado I','TCC I'],
+      8: ['Tópicos em Economia II','Eletiva II','Eletiva III','Estágio Supervisionado II','TCC II'],
     },
   },
   {
-    id: 'gti',
-    name: 'Gestão da Tecnologia da Informação',
-    sigla: 'GTI',
-    tipo: 'Bacharelado',
-    semestres: 8,
-    periodo: ['matutino', 'noturno'],
+    id: 'gti', name: 'Gestão da Tecnologia da Informação', sigla: 'GTI', tipo: 'Bacharelado', semestres: 8,
+    periodo: ['matutino','noturno'],
     subjects: {
-      1: ['Fundamentos de TI', 'Algoritmos e Lógica de Programação', 'Matemática Aplicada', 'Comunicação Empresarial', 'Introdução à Gestão'],
-      2: ['Banco de Dados I', 'Redes de Computadores I', 'Sistemas Operacionais', 'Contabilidade para TI', 'Gestão de Pessoas'],
-      3: ['Banco de Dados II', 'Redes de Computadores II', 'Engenharia de Software', 'Gestão de Projetos de TI', 'Estatística Aplicada'],
-      4: ['Segurança da Informação', 'Arquitetura de Sistemas', 'Governança de TI', 'Gestão Financeira', 'Análise de Sistemas'],
-      5: ['Cloud Computing', 'Business Intelligence', 'Gestão de Serviços de TI', 'Qualidade de Software', 'Empreendedorismo em TI'],
-      6: ['Transformação Digital', 'Inteligência Artificial Aplicada', 'Gestão de Riscos em TI', 'Marketing Digital', 'Tópicos em GTI'],
-      7: ['Inovação e Startups', 'Eletiva I', 'Eletiva II', 'Estágio Supervisionado I', 'TCC I'],
-      8: ['Tendências em TI', 'Eletiva III', 'Eletiva IV', 'Estágio Supervisionado II', 'TCC II'],
+      1: ['Fundamentos de TI','Algoritmos e Lógica de Programação','Matemática Aplicada','Comunicação Empresarial','Introdução à Gestão'],
+      2: ['Banco de Dados I','Redes de Computadores I','Sistemas Operacionais','Contabilidade para TI','Gestão de Pessoas'],
+      3: ['Banco de Dados II','Redes de Computadores II','Engenharia de Software','Gestão de Projetos de TI','Estatística Aplicada'],
+      4: ['Segurança da Informação','Arquitetura de Sistemas','Governança de TI','Gestão Financeira','Análise de Sistemas'],
+      5: ['Cloud Computing','Business Intelligence','Gestão de Serviços de TI','Qualidade de Software','Empreendedorismo em TI'],
+      6: ['Transformação Digital','Inteligência Artificial Aplicada','Gestão de Riscos em TI','Marketing Digital','Tópicos em GTI'],
+      7: ['Inovação e Startups','Eletiva I','Eletiva II','Estágio Supervisionado I','TCC I'],
+      8: ['Tendências em TI','Eletiva III','Eletiva IV','Estágio Supervisionado II','TCC II'],
     },
   },
   {
-    id: 'ss',
-    name: 'Serviço Social',
-    sigla: 'SS',
-    tipo: 'Bacharelado',
-    semestres: 8,
-    periodo: ['matutino', 'noturno'],
+    id: 'ss', name: 'Serviço Social', sigla: 'SS', tipo: 'Bacharelado', semestres: 8,
+    periodo: ['matutino','noturno'],
     subjects: {
-      1: ['Introdução ao Serviço Social', 'Sociologia I', 'Economia Política', 'Fundamentos Históricos do Serviço Social', 'Metodologia Científica'],
-      2: ['Fundamentos Teórico-Metodológicos I', 'Sociologia II', 'Filosofia', 'Psicologia Social', 'Políticas Sociais I'],
-      3: ['Fundamentos Teórico-Metodológicos II', 'Direito e Legislação Social', 'Antropologia', 'Políticas Sociais II', 'Ética Profissional'],
-      4: ['Processo de Trabalho em Serviço Social I', 'Seguridade Social', 'Pesquisa em Serviço Social I', 'Saúde e Serviço Social', 'Movimentos Sociais'],
-      5: ['Processo de Trabalho em Serviço Social II', 'Pesquisa em Serviço Social II', 'Serviço Social e Educação', 'Questão Agrária', 'Família e Serviço Social'],
-      6: ['Gestão Social', 'Serviço Social e Assistência Social', 'Eletiva I', 'Supervisão de Estágio I', 'Estágio Supervisionado I'],
-      7: ['Tópicos em Serviço Social', 'Eletiva II', 'Supervisão de Estágio II', 'Estágio Supervisionado II', 'TCC I'],
-      8: ['Seminários Temáticos', 'Eletiva III', 'Supervisão de Estágio III', 'Estágio Supervisionado III', 'TCC II'],
+      1: ['Introdução ao Serviço Social','Sociologia I','Economia Política','Fundamentos Históricos do Serviço Social','Metodologia Científica'],
+      2: ['Fundamentos Teórico-Metodológicos I','Sociologia II','Filosofia','Psicologia Social','Políticas Sociais I'],
+      3: ['Fundamentos Teórico-Metodológicos II','Direito e Legislação Social','Antropologia','Políticas Sociais II','Ética Profissional'],
+      4: ['Processo de Trabalho em Serviço Social I','Seguridade Social','Pesquisa em Serviço Social I','Saúde e Serviço Social','Movimentos Sociais'],
+      5: ['Processo de Trabalho em Serviço Social II','Pesquisa em Serviço Social II','Serviço Social e Educação','Questão Agrária','Família e Serviço Social'],
+      6: ['Gestão Social','Serviço Social e Assistência Social','Eletiva I','Supervisão de Estágio I','Estágio Supervisionado I'],
+      7: ['Tópicos em Serviço Social','Eletiva II','Supervisão de Estágio II','Estágio Supervisionado II','TCC I'],
+      8: ['Seminários Temáticos','Eletiva III','Supervisão de Estágio III','Estágio Supervisionado III','TCC II'],
     },
   },
   {
-    id: 'psi',
-    name: 'Psicologia',
-    sigla: 'PSI',
-    tipo: 'Bacharelado',
-    semestres: 10,
-    periodo: ['matutino', 'integral'],
+    id: 'psi', name: 'Psicologia', sigla: 'PSI', tipo: 'Bacharelado', semestres: 10,
+    periodo: ['matutino','integral'],
     subjects: {
-      1: ['Introdução à Psicologia', 'Fundamentos de Neurociência', 'Psicologia do Desenvolvimento I', 'Sociologia', 'Filosofia'],
-      2: ['Psicologia do Desenvolvimento II', 'Psicologia Social I', 'Teorias da Personalidade', 'Estatística Aplicada à Psicologia', 'Metodologia Científica'],
-      3: ['Psicologia Social II', 'Psicopatologia I', 'Avaliação Psicológica I', 'Processos Básicos: Cognição e Percepção', 'Ética em Psicologia'],
-      4: ['Psicopatologia II', 'Avaliação Psicológica II', 'Psicologia Clínica I', 'Processos Básicos: Motivação e Emoção', 'Pesquisa em Psicologia'],
-      5: ['Psicologia Clínica II', 'Psicologia Organizacional I', 'Psicologia Escolar I', 'Psicodiagnóstico', 'Saúde Mental e Saúde Coletiva'],
-      6: ['Psicologia Organizacional II', 'Psicologia Escolar II', 'Psicanálise', 'Psicologia Hospitalar', 'Eletiva I'],
-      7: ['Psicoterapia Cognitivo-Comportamental', 'Psicologia Jurídica', 'Psicologia Comunitária', 'Eletiva II', 'Estágio Básico I'],
-      8: ['Psicologia da Saúde', 'Neuropsicologia', 'Eletiva III', 'Estágio Básico II', 'TCC I'],
-      9: ['Intervenção Clínica Supervisionada I', 'Intervenção Organizacional Supervisionada', 'Eletiva IV', 'Estágio Profissionalizante I', 'TCC II'],
-      10: ['Intervenção Clínica Supervisionada II', 'Seminários em Psicologia', 'Eletiva V', 'Estágio Profissionalizante II', 'TCC III'],
+      1:  ['Introdução à Psicologia','Fundamentos de Neurociência','Psicologia do Desenvolvimento I','Sociologia','Filosofia'],
+      2:  ['Psicologia do Desenvolvimento II','Psicologia Social I','Teorias da Personalidade','Estatística Aplicada à Psicologia','Metodologia Científica'],
+      3:  ['Psicologia Social II','Psicopatologia I','Avaliação Psicológica I','Processos Básicos: Cognição e Percepção','Ética em Psicologia'],
+      4:  ['Psicopatologia II','Avaliação Psicológica II','Psicologia Clínica I','Processos Básicos: Motivação e Emoção','Pesquisa em Psicologia'],
+      5:  ['Psicologia Clínica II','Psicologia Organizacional I','Psicologia Escolar I','Psicodiagnóstico','Saúde Mental e Saúde Coletiva'],
+      6:  ['Psicologia Organizacional II','Psicologia Escolar II','Psicanálise','Psicologia Hospitalar','Eletiva I'],
+      7:  ['Psicoterapia Cognitivo-Comportamental','Psicologia Jurídica','Psicologia Comunitária','Eletiva II','Estágio Básico I'],
+      8:  ['Psicologia da Saúde','Neuropsicologia','Eletiva III','Estágio Básico II','TCC I'],
+      9:  ['Intervenção Clínica Supervisionada I','Intervenção Organizacional Supervisionada','Eletiva IV','Estágio Profissionalizante I','TCC II'],
+      10: ['Intervenção Clínica Supervisionada II','Seminários em Psicologia','Eletiva V','Estágio Profissionalizante II','TCC III'],
     },
   },
 ];
@@ -225,57 +188,38 @@ function fmtDate(ts) {
   const diff = Math.floor((now - d) / 60000);
   if (diff < 1)  return 'agora';
   if (diff < 60) return `${diff}min`;
-  if (diff < 1440) return `${Math.floor(diff/60)}h`;
-  return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'short' });
+  if (diff < 1440) return `${Math.floor(diff / 60)}h`;
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
 }
 
-function postTypeIcon(type) {
-  return { aviso:'📢', documento:'📄', imagem:'🖼️', discussao:'💬', link:'🔗' }[type] || '💬';
+function fmtChatTime(ts) {
+  if (!ts) return '';
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
-// ── IA: Análise de imagem de grade curricular via Claude API ──────────────────
+function formatDaySeparator(date) {
+  const now = new Date();
+  const toStr = (d) => d.toLocaleDateString('pt-BR');
+  if (toStr(date) === toStr(now)) return 'Hoje';
+  const yesterday = new Date(now - 86400000);
+  if (toStr(date) === toStr(yesterday)) return 'Ontem';
+  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' });
+}
 
-/**
- * Analisa o print do Portal do Aluno (FACAPE) e retorna as disciplinas
- * do período indicado pelo usuário.
- *
- * Estrutura da grade no portal:
- *   Colunas: Período | Código | Disciplina (Descrição) | C.H. | C.R. | Pré-Requisito
- *   Exemplo de linha: 2 | 02.03.19.1.08 | CALCULO I | 60 | 4 | ...
- *
- * @param {string} imageBase64
- * @param {string} mimeType
- * @param {number|null} targetSemester  — período atual selecionado pelo usuário
- */
+// ── IA: Análise de grade curricular via Claude API ────────────────────────────
 async function analyzeGradeImage(imageBase64, mimeType = 'image/jpeg', targetSemester = null) {
   const semInstrucao = targetSemester
     ? `O usuário informou que está cursando o PERÍODO ${targetSemester}. Retorne APENAS as disciplinas cuja coluna "Período" seja exatamente "${targetSemester}".`
     : `Retorne as disciplinas do período de maior número com aulas regulares (excluindo estágios e TCCs).`;
 
   const prompt = `Esta é uma imagem do Portal do Aluno da FACAPE (Faculdade de Petrolina – PE).
-
 A grade curricular tem colunas: Período | Código | Disciplina/Descrição | C.H. | C.R. | Pré-Requisito.
-
 ${semInstrucao}
-
-Regras de extração:
-- Leia TODAS as linhas da tabela.
-- Filtre SOMENTE as linhas cujo valor na coluna "Período" corresponda ao período solicitado.
-- O campo "nome" deve ser o nome da disciplina capitalizado corretamente em português (ex: "Cálculo I", "Banco de Dados I").
-- O campo "codigo" deve ser o código exato (ex: "02.03.19.1.08").
-- NÃO inclua estágios, TCCs, projetos ou atividades complementares, a menos que sejam disciplinas regulares daquele período.
-- Identifique o nome do curso e o período detectado no cabeçalho da página, se visível.
-
-Retorne SOMENTE um JSON válido, sem texto fora do JSON:
-{
-  "materias": [
-    {"nome": "Nome da Disciplina", "codigo": "XX.XX.XX.X.XX"}
-  ],
-  "semestre": <número do período ou null>,
-  "curso": "<nome do curso ou null>"
-}
-
-Se não conseguir identificar matérias, retorne: {"materias": [], "semestre": null, "curso": null}`;
+Regras: leia TODAS as linhas, filtre pelo período solicitado, capitalize os nomes em português, não inclua estágios/TCCs salvo se forem disciplinas regulares.
+Retorne SOMENTE JSON válido:
+{"materias":[{"nome":"Nome","codigo":"XX.XX.XX.X.XX"}],"semestre":<número ou null>,"curso":"<nome ou null>"}
+Se não conseguir identificar: {"materias":[],"semestre":null,"curso":null}`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -284,43 +228,32 @@ Se não conseguir identificar matérias, retorne: {"materias": [], "semestre": n
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1000,
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: mimeType, data: imageBase64 },
-            },
-            { type: 'text', text: prompt },
-          ],
-        }],
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: mimeType, data: imageBase64 } },
+          { type: 'text', text: prompt },
+        ]}],
       }),
     });
-
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     const data = await response.json();
     const text = data.content?.find(b => b.type === 'text')?.text || '{}';
     const clean = text.replace(/```json|```/g, '').trim();
-    const jsonMatch = clean.match(/{[\s\S]*}/);
-    if (!jsonMatch) return { materias: [], semestre: null, curso: null };
-    const parsed = JSON.parse(jsonMatch[0]);
-    // Normaliza: aceita string[] ou {nome,codigo}[]
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (!match) return { materias: [], semestre: null, curso: null };
+    const parsed = JSON.parse(match[0]);
     if (Array.isArray(parsed.materias)) {
-      parsed.materias = parsed.materias.map(m =>
-        typeof m === 'string'
-          ? { nome: m, codigo: '' }
-          : { nome: m.nome || m.name || '', codigo: m.codigo || m.code || '' }
-      ).filter(m => m.nome.trim());
+      parsed.materias = parsed.materias
+        .map(m => typeof m === 'string' ? { nome: m, codigo: '' } : { nome: m.nome || m.name || '', codigo: m.codigo || m.code || '' })
+        .filter(m => m.nome.trim());
     }
     return parsed;
   } catch (err) {
-    console.error('[turmas/ia] Erro ao analisar imagem:', err);
+    console.error('[turmas/ia] Erro:', err);
     return { materias: [], semestre: null, curso: null };
   }
 }
 
-// ── Perfil Acadêmico Completo (com matérias) ─────────────────────────────────
-
+// ── Perfil Acadêmico ──────────────────────────────────────────────────────────
 export async function loadFullAcademicProfile(uid) {
   try {
     const snap = await getDoc(doc(db, 'users', uid, 'profile', 'academic'));
@@ -331,23 +264,26 @@ export async function loadFullAcademicProfile(uid) {
 
 export async function saveFullAcademicProfile(uid, data) {
   try {
+    const course = FACAPE_COURSES.find(c => c.id === data.courseId);
     await setDoc(doc(db, 'users', uid, 'profile', 'academic'), {
       institution: data.institution || FACAPE_INSTITUTION,
       course:      data.course || '',
       courseId:    data.courseId || '',
       semester:    parseInt(data.semester) || 1,
       period:      data.period || 'noturno',
-      subjects:    data.subjects || [],   // [{ name, code }]
+      subjects:    data.subjects || [],
       skills:      data.skills || [],
       bio:         data.bio || '',
       updatedAt:   new Date().toISOString(),
     }, { merge: true });
 
-    // Atualiza user_profiles para busca pública
     await setDoc(doc(db, 'user_profiles', uid), {
-      institution: data.institution || FACAPE_INSTITUTION,
-      course:      data.course || '',
-      courseId:    data.courseId || '',
+      institution:  data.institution || FACAPE_INSTITUTION,
+      course:       data.course || '',
+      courseId:     data.courseId || '',
+      semester:     parseInt(data.semester) || 1,
+      period:       data.period || 'noturno',
+      courseSigla:  course?.sigla || '',
     }, { merge: true });
 
     return true;
@@ -357,39 +293,43 @@ export async function saveFullAcademicProfile(uid, data) {
   }
 }
 
-// ── Salas de Matéria ──────────────────────────────────────────────────────────
-
-function roomId(institution, subjectName, subjectCode) {
-  const raw = `${institution}::${subjectCode || subjectName}`;
+// ── RoomId (CORRIGIDO: inclui courseId, semester, period) ─────────────────────
+export function buildRoomId(institution, courseId, semester, period, subjectName, subjectCode) {
+  const raw = `${institution}::${courseId}::sem${semester}::${period}::${subjectCode || subjectName}`;
   return raw.toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9:]/g, '_')
     .slice(0, 100);
 }
 
-export async function ensureSubjectRoom(institution, subjectName, subjectCode) {
-  const id = roomId(institution, subjectName, subjectCode);
+// ── Salas de Matéria ──────────────────────────────────────────────────────────
+export async function ensureSubjectRoom(institution, courseId, semester, period, subjectName, subjectCode) {
+  const id = buildRoomId(institution, courseId, semester, period, subjectName, subjectCode);
   const ref = doc(db, 'subject_rooms', id);
   const snap = await getDoc(ref);
   if (!snap.exists()) {
     await setDoc(ref, {
-      institution, subjectName,
+      institution,
+      courseId,
+      semester:    parseInt(semester),
+      period,
+      subjectName,
       subjectCode: subjectCode || '',
       memberCount: 0,
-      createdAt: serverTimestamp(),
+      createdAt:   serverTimestamp(),
     });
   }
   return id;
 }
 
-export async function joinSubjectRoom(roomId, uid) {
+export async function joinSubjectRoom(rId, uid) {
   try {
-    await setDoc(doc(db, 'subject_rooms', roomId, 'members', uid), {
+    await setDoc(doc(db, 'subject_rooms', rId, 'members', uid), {
       uid, joinedAt: serverTimestamp(),
     });
-    const snap = await getDoc(doc(db, 'subject_rooms', roomId));
+    const snap = await getDoc(doc(db, 'subject_rooms', rId));
     const cur = snap.data()?.memberCount || 0;
-    await updateDoc(doc(db, 'subject_rooms', roomId), { memberCount: cur + 1 });
+    await updateDoc(doc(db, 'subject_rooms', rId), { memberCount: cur + 1 });
     return true;
   } catch (err) {
     console.error('[turmas] Erro ao entrar na sala:', err);
@@ -397,29 +337,37 @@ export async function joinSubjectRoom(roomId, uid) {
   }
 }
 
-export async function leaveSubjectRoom(roomId, uid) {
+export async function leaveSubjectRoom(rId, uid) {
   try {
-    await deleteDoc(doc(db, 'subject_rooms', roomId, 'members', uid));
-    const snap = await getDoc(doc(db, 'subject_rooms', roomId));
+    await deleteDoc(doc(db, 'subject_rooms', rId, 'members', uid));
+    const snap = await getDoc(doc(db, 'subject_rooms', rId));
     const cur = snap.data()?.memberCount || 1;
-    await updateDoc(doc(db, 'subject_rooms', roomId), { memberCount: Math.max(0, cur - 1) });
+    await updateDoc(doc(db, 'subject_rooms', rId), { memberCount: Math.max(0, cur - 1) });
     return true;
   } catch { return false; }
 }
 
-export async function isRoomMember(roomId, uid) {
+export async function isRoomMember(rId, uid) {
   try {
-    const snap = await getDoc(doc(db, 'subject_rooms', roomId, 'members', uid));
+    const snap = await getDoc(doc(db, 'subject_rooms', rId, 'members', uid));
     return snap.exists();
   } catch { return false; }
 }
 
 export async function syncUserRooms(uid, profile) {
-  if (!profile?.institution || !profile?.subjects?.length) return;
+  if (!profile?.institution || !profile?.subjects?.length) return [];
+  const results = [];
   for (const sub of profile.subjects) {
-    const rid = await ensureSubjectRoom(profile.institution, sub.name, sub.code);
-    await joinSubjectRoom(rid, uid);
+    const rid = await ensureSubjectRoom(
+      profile.institution, profile.courseId, profile.semester,
+      profile.period, sub.name, sub.code
+    );
+    const wasMember = await isRoomMember(rid, uid);
+    if (!wasMember) await joinSubjectRoom(rid, uid);
+    const snap = await getDoc(doc(db, 'subject_rooms', rid));
+    results.push({ id: rid, subjectName: sub.name, ...snap.data() });
   }
+  return results;
 }
 
 export async function listMyRooms(uid) {
@@ -428,112 +376,201 @@ export async function listMyRooms(uid) {
 
   const rooms = [];
   for (const sub of profile.subjects) {
-    const rid = roomId(profile.institution, sub.name, sub.code);
+    const rid = buildRoomId(
+      profile.institution, profile.courseId, profile.semester,
+      profile.period, sub.name, sub.code
+    );
     try {
-      const snap = await getDoc(doc(db, 'subject_rooms', rid));
-      if (snap.exists()) {
-        const isMember = await isRoomMember(rid, uid);
-        rooms.push({ id: rid, ...snap.data(), isMember, subjectRef: sub });
-      } else {
-        await ensureSubjectRoom(profile.institution, sub.name, sub.code);
+      let snap = await getDoc(doc(db, 'subject_rooms', rid));
+      if (!snap.exists()) {
+        await ensureSubjectRoom(
+          profile.institution, profile.courseId, profile.semester,
+          profile.period, sub.name, sub.code
+        );
         await joinSubjectRoom(rid, uid);
-        rooms.push({
-          id: rid, institution: profile.institution,
-          subjectName: sub.name, subjectCode: sub.code || '',
-          memberCount: 1, isMember: true, subjectRef: sub,
-        });
+        snap = await getDoc(doc(db, 'subject_rooms', rid));
       }
+      rooms.push({ id: rid, ...snap.data(), subjectRef: sub, profile });
     } catch { /* ignora salas que falharam */ }
   }
   return rooms;
 }
 
-// ── Posts do Mural ────────────────────────────────────────────────────────────
+// ── Room Reads (badges de não lidos) ──────────────────────────────────────────
+async function updateRoomRead(uid, rId) {
+  await setDoc(
+    doc(db, 'users', uid, 'roomReads', rId),
+    { timestamp: serverTimestamp() }
+  );
+}
 
-export async function postToMural(roomId, { type, content, fileUrl, fileName, fileType }) {
-  const user = auth.currentUser;
-  if (!user || !content?.trim()) return null;
+async function getUnreadCount(uid, rId) {
   try {
-    const ref = await addDoc(collection(db, 'subject_rooms', roomId, 'posts'), {
-      authorId:   user.uid,
+    const readSnap = await getDoc(doc(db, 'users', uid, 'roomReads', rId));
+    if (!readSnap.exists()) {
+      const q = query(collection(db, 'subject_rooms', rId, 'messages'), limit(50));
+      const snap = await getDocs(q);
+      return snap.size;
+    }
+    const lastRead = readSnap.data().timestamp;
+    const q = query(
+      collection(db, 'subject_rooms', rId, 'messages'),
+      where('createdAt', '>', lastRead)
+    );
+    const snap = await getDocs(q);
+    return snap.size;
+  } catch { return 0; }
+}
+
+// ── Presence ──────────────────────────────────────────────────────────────────
+function startPresence(uid) {
+  const ref = doc(db, 'users', uid, 'presence');
+  const update = () => setDoc(ref, { lastSeen: serverTimestamp() }, { merge: true });
+  update();
+  if (_presenceInterval) clearInterval(_presenceInterval);
+  _presenceInterval = setInterval(update, 60000);
+}
+
+async function getOnlineCount(rId) {
+  try {
+    const membersSnap = await getDocs(collection(db, 'subject_rooms', rId, 'members'));
+    const uids = membersSnap.docs.map(d => d.id);
+    const cutoff = new Date(Date.now() - 2 * 60 * 1000);
+    const presenceSnaps = await Promise.all(
+      uids.map(u => getDoc(doc(db, 'users', u, 'presence')))
+    );
+    return presenceSnaps.filter(s => {
+      if (!s.exists()) return false;
+      const ls = s.data().lastSeen?.toDate?.();
+      return ls && ls > cutoff;
+    }).length;
+  } catch { return 0; }
+}
+
+// ── Chat Messages ─────────────────────────────────────────────────────────────
+export async function sendChatMessage(rId, uid, text) {
+  const user = auth.currentUser;
+  if (!user || !text?.trim()) return null;
+  try {
+    const ref = await addDoc(collection(db, 'subject_rooms', rId, 'messages'), {
+      authorId:   uid,
       authorName: user.displayName || user.email.split('@')[0],
-      type:       type || 'discussao',
-      content:    content.trim(),
-      fileUrl:    fileUrl || null,
-      fileName:   fileName || null,
-      fileType:   fileType || null,
-      likes:      [],
+      text:       text.trim(),
+      type:       'text',
       createdAt:  serverTimestamp(),
+      deleted:    false,
     });
     return ref.id;
   } catch (err) {
-    console.error('[turmas] Erro ao postar:', err);
+    console.error('[turmas/chat] Erro ao enviar:', err);
     return null;
   }
 }
 
-export async function deletePost(roomId, postId, uid) {
+export async function softDeleteMessage(rId, msgId, uid) {
   try {
-    const ref = doc(db, 'subject_rooms', roomId, 'posts', postId);
+    const ref = doc(db, 'subject_rooms', rId, 'messages', msgId);
     const snap = await getDoc(ref);
     if (!snap.exists() || snap.data().authorId !== uid) return false;
-    await deleteDoc(ref);
+    await updateDoc(ref, { deleted: true, deletedAt: serverTimestamp() });
     return true;
   } catch { return false; }
 }
 
-export async function toggleLikePost(roomId, postId, uid) {
-  try {
-    const ref = doc(db, 'subject_rooms', roomId, 'posts', postId);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) return;
-    const likes = snap.data().likes || [];
-    if (likes.includes(uid)) {
-      await updateDoc(ref, { likes: arrayRemove(uid) });
-    } else {
-      await updateDoc(ref, { likes: arrayUnion(uid) });
-    }
-  } catch (err) { console.error('[turmas] Erro ao curtir:', err); }
+// ── Typing Indicators ─────────────────────────────────────────────────────────
+function _setTyping(rId, uid, displayName) {
+  const ref = doc(db, 'subject_rooms', rId, 'typing', uid);
+  setDoc(ref, { name: displayName, ts: serverTimestamp() }).catch(() => {});
+  if (_typingClearTimeout) clearTimeout(_typingClearTimeout);
+  _typingClearTimeout = setTimeout(() => _clearTyping(rId, uid), 3000);
 }
 
-// ── Listener em Tempo Real do Mural ──────────────────────────────────────────
+function _clearTyping(rId, uid) {
+  deleteDoc(doc(db, 'subject_rooms', rId, 'typing', uid)).catch(() => {});
+  if (_typingClearTimeout) { clearTimeout(_typingClearTimeout); _typingClearTimeout = null; }
+}
 
-export function subscribeMural(roomId, callback) {
-  if (_unsubMural) { _unsubMural(); _unsubMural = null; }
-  _currentRoomId = roomId;
-  const q = query(
-    collection(db, 'subject_rooms', roomId, 'posts'),
-    orderBy('createdAt', 'desc'),
-    limit(50)
-  );
-  _unsubMural = onSnapshot(q, (snap) => {
-    const posts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    callback(posts);
-  }, (err) => {
-    console.error('[turmas] Erro no listener do mural:', err);
-    callback(null, err);
+// ── Notificações de chat (criadas para o próprio usuário via onSnapshot) ──────
+async function _createChatNotif(uid, rId, roomName, msg) {
+  try {
+    await addDoc(collection(db, 'notifications', uid, 'items'), {
+      type:       'chat_message',
+      roomId:     rId,
+      roomName:   roomName || 'Sala',
+      authorName: msg.authorName || 'Colega',
+      preview:    (msg.text || '').slice(0, 60),
+      createdAt:  serverTimestamp(),
+      read:       false,
+    });
+  } catch { /* notificações são best-effort */ }
+}
+
+// ── Listeners de badge em background ─────────────────────────────────────────
+function _initRoomBadgeListeners(uid, rooms) {
+  Object.values(_roomBadgeListeners).forEach(u => u());
+  _roomBadgeListeners = {};
+
+  rooms.forEach(room => {
+    const q = query(
+      collection(db, 'subject_rooms', room.id, 'messages'),
+      orderBy('createdAt', 'desc'),
+      limit(1)
+    );
+    let isFirst = true;
+    _roomBadgeListeners[room.id] = onSnapshot(q, async (snap) => {
+      if (isFirst) { isFirst = false; return; }
+      const msgDoc = snap.docs[0];
+      if (!msgDoc) return;
+      const msg = msgDoc.data();
+      if (msg.authorId === uid) return;
+      if (_currentChatRoomId === room.id) return;
+
+      _unreadCounts[room.id] = (_unreadCounts[room.id] || 0) + 1;
+      _updateRoomCardBadge(room.id, _unreadCounts[room.id]);
+      await _createChatNotif(uid, room.id, room.subjectName, msg);
+    });
   });
-  return () => { if (_unsubMural) { _unsubMural(); _unsubMural = null; } };
+}
+
+function _updateRoomCardBadge(rId, count) {
+  const card = document.querySelector(`[data-room-id="${rId}"]`);
+  if (!card) return;
+  let badge = card.querySelector('.turma-unread-badge');
+  if (count > 0) {
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'turma-unread-badge';
+      const arrow = card.querySelector('.turma-card-arrow');
+      if (arrow) arrow.before(badge);
+      else card.appendChild(badge);
+    }
+    badge.textContent = count > 99 ? '99+' : String(count);
+  } else if (badge) {
+    badge.remove();
+  }
 }
 
 // ── Renderização da aba Turmas ────────────────────────────────────────────────
-
 export async function renderTurmasTab(uid) {
   const container = document.getElementById('turmas-tab-content');
   if (!container) return;
 
+  container.classList.remove('chat-active');
+
   const profile = await loadFullAcademicProfile(uid);
 
   if (!profile?.institution || !profile?.subjects?.length) {
-    renderOnboarding(container, uid);
+    _renderOnboarding(container, uid);
     return;
   }
+
+  const periodLabel = { matutino: 'Matutino', vespertino: 'Vespertino', noturno: 'Noturno', integral: 'Integral', ead: 'EaD' };
 
   container.innerHTML = `
     <div class="turmas-profile-bar">
       <div class="turmas-profile-info">
         <span class="turmas-inst">${esc(FACAPE_DISPLAY_NAME)}</span>
-        <span class="turmas-course">${esc(profile.course)} · ${profile.semester}º sem · ${esc(profile.period || 'noturno')}</span>
+        <span class="turmas-course">${esc(profile.course)} · ${profile.semester}º sem · ${esc(periodLabel[profile.period] || profile.period)}</span>
       </div>
       <button class="turmas-edit-btn" onclick="window.openTurmasOnboarding()">✏️ Editar</button>
     </div>
@@ -547,28 +584,45 @@ export async function renderTurmasTab(uid) {
   if (!listEl) return;
 
   if (!rooms.length) {
-    listEl.innerHTML = `<div class="turmas-empty">Nenhuma turma encontrada. <button onclick="window.openTurmasOnboarding()">Adicionar matérias</button></div>`;
+    listEl.innerHTML = `<div class="turmas-empty">Nenhuma turma encontrada.
+      <button class="btn-link" onclick="window.openTurmasOnboarding()">Adicionar matérias</button>
+    </div>`;
     return;
   }
 
-  listEl.innerHTML = rooms.map(room => `
-    <div class="turma-card" onclick="window.openMural('${room.id}', '${esc(room.subjectName)}')">
-      <div class="turma-card-left">
-        <div class="turma-card-icon">📚</div>
-        <div class="turma-card-info">
-          <span class="turma-card-name">${esc(room.subjectName)}</span>
-          ${room.subjectCode ? `<span class="turma-card-code">${esc(room.subjectCode)}</span>` : ''}
-          <span class="turma-card-members">👥 ${room.memberCount || 1} aluno${(room.memberCount||1) !== 1 ? 's' : ''}</span>
+  // Carrega contagem de não lidos em paralelo
+  const unreadArr = await Promise.all(rooms.map(r => getUnreadCount(uid, r.id)));
+  unreadArr.forEach((count, i) => { _unreadCounts[rooms[i].id] = count; });
+
+  const course = FACAPE_COURSES.find(c => c.id === profile.courseId);
+  const sigla = course?.sigla || profile.courseId || '';
+
+  listEl.innerHTML = rooms.map((room, i) => {
+    const unread = unreadArr[i];
+    const sem  = room.semester || profile.semester;
+    const per  = periodLabel[room.period || profile.period] || room.period || profile.period;
+    return `
+      <div class="turma-card" data-room-id="${room.id}"
+           onclick="window._openChat('${room.id}')">
+        <div class="turma-card-left">
+          <div class="turma-card-icon">📚</div>
+          <div class="turma-card-info">
+            <span class="turma-card-name">${esc(room.subjectName)}</span>
+            <span class="turma-card-meta">${esc(sigla)} · ${sem}º sem · ${esc(per)}</span>
+            <span class="turma-card-members">👥 ${room.memberCount || 1} aluno${(room.memberCount || 1) !== 1 ? 's' : ''}</span>
+          </div>
         </div>
+        ${unread > 0 ? `<span class="turma-unread-badge">${unread > 99 ? '99+' : unread}</span>` : ''}
+        <div class="turma-card-arrow">›</div>
       </div>
-      <div class="turma-card-arrow">›</div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
+
+  _initRoomBadgeListeners(uid, rooms);
 }
 
-// ── Onboarding FACAPE: seleção de curso + matérias ────────────────────────────
-
-function renderOnboarding(container, uid) {
+// ── Onboarding ────────────────────────────────────────────────────────────────
+function _renderOnboarding(container, uid) {
   container.innerHTML = `
     <div class="turmas-onboarding">
       <div class="turmas-onboarding-icon">🎓</div>
@@ -586,27 +640,23 @@ window.openTurmasOnboarding = async function() {
   if (!uid) return;
   const profile = await loadFullAcademicProfile(uid) || {};
 
-  // Gera opções de cursos
   const courseOptions = FACAPE_COURSES.map(c =>
-    `<option value="${c.id}" ${profile.courseId === c.id ? 'selected' : ''}>${c.name} (${c.tipo})</option>`
+    `<option value="${c.id}" ${profile.courseId === c.id ? 'selected' : ''}>${esc(c.name)} (${c.tipo})</option>`
   ).join('');
 
   openModal('🎓 Perfil Acadêmico', `
     <div class="turmas-form">
-
-      <!-- Instituição fixa: FACAPE -->
       <div class="form-group">
         <label class="form-label">Instituição de Ensino</label>
-        <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg-secondary,#1a1a2e);border-radius:8px;border:1px solid var(--border,#333)">
-          <span style="font-size:18px">🏛️</span>
+        <div class="turmas-inst-block">
+          <span>🏛️</span>
           <div>
-            <div style="font-weight:600;color:var(--text)">${FACAPE_DISPLAY_NAME}</div>
-            <div style="font-size:12px;color:var(--text-muted)">Petrolina – PE</div>
+            <div class="turmas-inst-name">${esc(FACAPE_DISPLAY_NAME)}</div>
+            <div class="turmas-inst-city">Petrolina – PE</div>
           </div>
         </div>
       </div>
 
-      <!-- Seleção de curso -->
       <div class="form-group">
         <label class="form-label">Curso *</label>
         <select id="ta-course-id" class="form-select" onchange="window._taOnCourseChange()">
@@ -615,108 +665,83 @@ window.openTurmasOnboarding = async function() {
         </select>
       </div>
 
-      <!-- Semestre e Período -->
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Semestre</label>
-          <input id="ta-semester" class="form-input" type="number" min="1" max="10" value="${profile.semester || 1}">
+          <input id="ta-semester" class="form-input" type="number" min="1" max="12"
+            value="${profile.semester || 1}" onchange="window._taOnCourseChange()">
         </div>
         <div class="form-group">
           <label class="form-label">Período</label>
           <select id="ta-period" class="form-select">
-            <option value="matutino" ${profile.period === 'matutino' ? 'selected' : ''}>Matutino</option>
+            <option value="matutino"   ${profile.period === 'matutino'   ? 'selected' : ''}>Matutino</option>
             <option value="vespertino" ${profile.period === 'vespertino' ? 'selected' : ''}>Vespertino</option>
-            <option value="noturno" ${(profile.period === 'noturno' || !profile.period) ? 'selected' : ''}>Noturno</option>
-            <option value="integral" ${profile.period === 'integral' ? 'selected' : ''}>Integral</option>
-            <option value="ead" ${profile.period === 'ead' ? 'selected' : ''}>EaD</option>
+            <option value="noturno"    ${(profile.period === 'noturno' || !profile.period) ? 'selected' : ''}>Noturno</option>
+            <option value="integral"   ${profile.period === 'integral'   ? 'selected' : ''}>Integral</option>
+            <option value="ead"        ${profile.period === 'ead'        ? 'selected' : ''}>EaD</option>
           </select>
         </div>
       </div>
 
-      <!-- IA: Upload de grade curricular -->
       <div class="form-group">
         <label class="form-label">📸 Importar Grade pelo Portal (IA)</label>
         <div class="turmas-ia-upload" id="ta-ia-upload-area">
           <label for="ta-grade-img" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px">
             <span style="font-size:28px">🤖</span>
             <span style="font-weight:600;color:var(--accent)">Enviar print do portal aluno</span>
-            <span style="font-size:12px;color:var(--text-muted);text-align:center">Selecione seu período acima e envie o print da grade curricular do portal.facape.br — a IA filtrará as matérias do período informado</span>
+            <span style="font-size:12px;color:var(--text-muted);text-align:center">
+              Selecione seu período acima e envie o print da grade curricular — a IA filtrará as matérias do período informado
+            </span>
             <input type="file" id="ta-grade-img" accept="image/*" style="display:none" onchange="window._taAnalyzeImage()">
           </label>
         </div>
         <div id="ta-ia-status" style="margin-top:6px;font-size:13px;color:var(--accent);display:none"></div>
       </div>
 
-      <!-- Matérias selecionadas -->
       <div class="form-group">
         <label class="form-label">Minhas Matérias</label>
-
-        <!-- Matérias do semestre (baseado no curso) -->
         <div id="ta-semester-subjects" class="turmas-semester-subjects" style="margin-bottom:8px"></div>
-
-        <!-- Lista de selecionadas -->
         <div class="turmas-subjects-list" id="ta-subjects-list"></div>
-
-        <!-- Adicionar manualmente -->
-        <div class="turmas-add-subject" style="margin-top:8px">
+        <div class="turmas-add-subject" style="margin-top:8px;display:flex;gap:8px">
           <input id="ta-sub-name" class="form-input" placeholder="Adicionar matéria manualmente" style="flex:2">
           <button class="btn-secondary" onclick="window._taAddSubject()" style="white-space:nowrap">+ Adicionar</button>
         </div>
       </div>
 
-      <button class="btn-primary" onclick="window._taSave()" style="width:100%;margin-top:8px">
+      <button class="btn-primary" id="ta-save-btn" onclick="window._taSave()" style="width:100%;margin-top:8px">
         💾 Salvar e Entrar nas Turmas
       </button>
     </div>
   `);
 
-  // Estado interno das matérias
   let subjects = profile.subjects ? [...profile.subjects] : [];
-  renderSubjectChips();
-
-  // Se já tem curso selecionado, renderiza as matérias do semestre
-  if (profile.courseId) {
-    window._taOnCourseChange();
-  }
-
-  // ── Handlers internos ─────────────────────────────────────────────────────
+  _renderSubjectChips();
+  if (profile.courseId) window._taOnCourseChange();
 
   window._taOnCourseChange = function() {
     const courseId = document.getElementById('ta-course-id')?.value;
     const semester = parseInt(document.getElementById('ta-semester')?.value) || 1;
-    if (!courseId) {
-      const el = document.getElementById('ta-semester-subjects');
-      if (el) el.innerHTML = '';
-      return;
-    }
     const course = FACAPE_COURSES.find(c => c.id === courseId);
-    if (!course) return;
-    renderSemesterSubjects(course, semester);
-  };
-
-  // Também atualiza ao mudar semestre
-  document.getElementById('ta-semester')?.addEventListener('change', () => {
-    window._taOnCourseChange();
-  });
-
-  function renderSemesterSubjects(course, semester) {
     const el = document.getElementById('ta-semester-subjects');
     if (!el) return;
+    if (!course) { el.innerHTML = ''; return; }
+    _renderSemesterSubjects(el, course, semester);
+  };
+
+  function _renderSemesterSubjects(el, course, semester) {
     const subs = course.subjects[semester] || [];
     if (!subs.length) { el.innerHTML = ''; return; }
-
     el.innerHTML = `
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">
-        Matérias do ${semester}º semestre de ${course.name} — clique para adicionar:
+        Matérias do ${semester}º semestre de ${esc(course.name)} — toque para adicionar:
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         ${subs.map(s => `
-          <button class="turmas-quick-sub-btn" onclick="window._taQuickAdd('${esc(s)}')"
-            style="padding:4px 10px;border-radius:20px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer;font-size:12px;transition:all .15s"
-            title="Clique para adicionar">${esc(s)}</button>
+          <button class="turmas-quick-sub-btn"
+            onclick="window._taQuickAdd('${esc(s)}')">${esc(s)}</button>
         `).join('')}
       </div>
-      <button onclick="window._taAddAllSemester()" style="margin-top:8px;font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer">
+      <button onclick="window._taAddAllSemester()" class="turmas-add-all-btn">
         ➕ Adicionar todas do semestre
       </button>
     `;
@@ -727,47 +752,41 @@ window.openTurmasOnboarding = async function() {
       showToast('Matéria já adicionada'); return;
     }
     subjects.push({ name, code: '' });
-    renderSubjectChips();
+    _renderSubjectChips();
+  };
+
+  window._taQuickAddWithCode = function(nome, codigo) {
+    if (subjects.find(s => s.name.toLowerCase() === nome.toLowerCase())) {
+      showToast('Matéria já adicionada'); return;
+    }
+    subjects.push({ name: nome, code: codigo });
+    _renderSubjectChips();
   };
 
   window._taAddAllSemester = function() {
-    const courseId = document.getElementById('ta-course-id')?.value;
-    const semester = parseInt(document.getElementById('ta-semester')?.value) || 1;
-    const course = FACAPE_COURSES.find(c => c.id === courseId);
+    const courseId  = document.getElementById('ta-course-id')?.value;
+    const semester  = parseInt(document.getElementById('ta-semester')?.value) || 1;
+    const course    = FACAPE_COURSES.find(c => c.id === courseId);
     if (!course) return;
-    const subs = course.subjects[semester] || [];
     let added = 0;
-    subs.forEach(name => {
+    (course.subjects[semester] || []).forEach(name => {
       if (!subjects.find(s => s.name.toLowerCase() === name.toLowerCase())) {
-        subjects.push({ name, code: '' });
-        added++;
+        subjects.push({ name, code: '' }); added++;
       }
     });
-    renderSubjectChips();
+    _renderSubjectChips();
     if (added) showToast(`✅ ${added} matéria(s) adicionada(s)`);
   };
 
-  // ── IA: Análise da imagem do portal ───────────────────────────────────────
   window._taAnalyzeImage = async function() {
-    const fileInput = document.getElementById('ta-grade-img');
-    const file = fileInput?.files?.[0];
+    const file = document.getElementById('ta-grade-img')?.files?.[0];
     if (!file) return;
-
-    // Lê o período selecionado antes da análise (campo obrigatório agora)
     const targetSemester = parseInt(document.getElementById('ta-semester')?.value) || null;
-
-    const statusEl = document.getElementById('ta-ia-status');
+    const statusEl   = document.getElementById('ta-ia-status');
     const uploadArea = document.getElementById('ta-ia-upload-area');
-    if (statusEl) {
-      statusEl.style.display = 'block';
-      statusEl.style.color = 'var(--accent)';
-      statusEl.textContent = targetSemester
-        ? `🤖 Analisando imagem — buscando matérias do período ${targetSemester}...`
-        : '🤖 Analisando imagem com IA...';
-    }
+    if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = `🤖 Analisando...`; }
     if (uploadArea) uploadArea.style.opacity = '0.5';
 
-    // Converte para base64
     const base64 = await new Promise((res, rej) => {
       const reader = new FileReader();
       reader.onload = () => res(reader.result.split(',')[1]);
@@ -775,21 +794,14 @@ window.openTurmasOnboarding = async function() {
       reader.readAsDataURL(file);
     });
 
-    const mimeType = file.type || 'image/jpeg';
-    // Passa o período selecionado para que a IA filtre corretamente
-    const result = await analyzeGradeImage(base64, mimeType, targetSemester);
-
+    const result = await analyzeGradeImage(base64, file.type || 'image/jpeg', targetSemester);
     if (uploadArea) uploadArea.style.opacity = '1';
 
     if (!result.materias?.length) {
-      if (statusEl) {
-        statusEl.style.color = '#e05252';
-        statusEl.textContent = '❌ Não foi possível identificar matérias. Verifique se o período está correto e tente outra imagem.';
-      }
+      if (statusEl) { statusEl.style.color = '#e05252'; statusEl.textContent = '❌ Nenhuma matéria identificada. Tente outra imagem.'; }
       return;
     }
 
-    // Preenche automaticamente curso se detectado
     if (result.curso) {
       const matched = FACAPE_COURSES.find(c =>
         c.name.toLowerCase().includes(result.curso.toLowerCase()) ||
@@ -800,71 +812,42 @@ window.openTurmasOnboarding = async function() {
         if (sel) sel.value = matched.id;
       }
     }
-    // Confirma o semestre detectado (mas respeita o que o usuário já selecionou)
-    if (result.semestre && !targetSemester) {
-      const semInput = document.getElementById('ta-semester');
-      if (semInput) semInput.value = result.semestre;
+
+    const el = document.getElementById('ta-semester-subjects');
+    if (el) {
+      el.innerHTML = `
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;display:flex;align-items:center;gap:5px">
+          <span style="background:rgba(108,99,255,.15);color:var(--accent);padding:2px 7px;border-radius:20px;font-size:11px;font-weight:700">🤖 IA</span>
+          ${result.materias.length} matéria(s) identificada(s) — toque para adicionar:
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${result.materias.map(m => `
+            <button class="turmas-quick-sub-btn"
+              onclick="window._taQuickAddWithCode('${esc(m.nome)}','${esc(m.codigo || '')}')"
+              title="${esc(m.codigo || '')}">${esc(m.nome)}</button>
+          `).join('')}
+        </div>
+        <button onclick="window._taAddAllIA()" class="turmas-add-all-btn">➕ Adicionar todas da IA</button>
+      `;
+      window._iaLastResult = result.materias;
     }
 
-    // ── Exibe resultados da IA na área de sugestões (substituindo sugestões fixas) ──
-    renderIASuggestions(result.materias, result.semestre || targetSemester);
-
-    if (statusEl) {
-      statusEl.style.color = '#2ed573';
-      statusEl.textContent = `✅ ${result.materias.length} matéria(s) do período ${result.semestre || targetSemester || ''} identificada(s) pela IA! Clique para adicionar.`;
-    }
+    if (statusEl) { statusEl.style.color = '#2ed573'; statusEl.textContent = `✅ ${result.materias.length} matéria(s) encontrada(s)!`; }
     showToast(`🤖 IA encontrou ${result.materias.length} matéria(s)!`);
   };
 
-  // Renderiza os chips de sugestão da IA no lugar das sugestões estáticas
-  function renderIASuggestions(materias, semestre) {
-    const el = document.getElementById('ta-semester-subjects');
-    if (!el) return;
-    if (!materias.length) { el.innerHTML = ''; return; }
-
-    el.innerHTML = `
-      <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;display:flex;align-items:center;gap:5px">
-        <span style="background:rgba(108,99,255,0.15);color:var(--accent);padding:2px 7px;border-radius:20px;font-size:11px;font-weight:700">🤖 IA</span>
-        Matérias do ${semestre ? semestre + 'º período' : 'período atual'} identificadas no portal — clique para adicionar:
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">
-        ${materias.map(m => `
-          <button class="turmas-quick-sub-btn" onclick="window._taQuickAddWithCode('${esc(m.nome)}','${esc(m.codigo)}')"
-            style="padding:4px 10px;border-radius:20px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer;font-size:12px;transition:all .15s"
-            title="${esc(m.codigo || '')}">${esc(m.nome)}</button>
-        `).join('')}
-      </div>
-      <button onclick="window._taAddAllIA()" style="margin-top:8px;font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer">
-        ➕ Adicionar todas da IA
-      </button>
-    `;
-
-    // Guarda resultado da IA para usar no "Adicionar todas"
-    window._iaLastResult = materias;
-  }
-
-  window._taQuickAddWithCode = function(nome, codigo) {
-    if (subjects.find(s => s.name.toLowerCase() === nome.toLowerCase())) {
-      showToast('Matéria já adicionada'); return;
-    }
-    subjects.push({ name: nome, code: codigo });
-    renderSubjectChips();
-  };
-
   window._taAddAllIA = function() {
-    const materias = window._iaLastResult || [];
     let added = 0;
-    materias.forEach(m => {
+    (window._iaLastResult || []).forEach(m => {
       if (!subjects.find(s => s.name.toLowerCase() === m.nome.toLowerCase())) {
-        subjects.push({ name: m.nome, code: m.codigo || '' });
-        added++;
+        subjects.push({ name: m.nome, code: m.codigo || '' }); added++;
       }
     });
-    renderSubjectChips();
+    _renderSubjectChips();
     if (added) showToast(`✅ ${added} matéria(s) adicionada(s)`);
   };
 
-  function renderSubjectChips() {
+  function _renderSubjectChips() {
     const el = document.getElementById('ta-subjects-list');
     if (!el) return;
     if (!subjects.length) {
@@ -886,27 +869,28 @@ window.openTurmasOnboarding = async function() {
       showToast('Matéria já adicionada'); return;
     }
     subjects.push({ name, code: '' });
-    if (document.getElementById('ta-sub-name')) document.getElementById('ta-sub-name').value = '';
-    renderSubjectChips();
+    const el = document.getElementById('ta-sub-name');
+    if (el) el.value = '';
+    _renderSubjectChips();
   };
 
   window._taRemoveSubject = function(idx) {
     subjects.splice(idx, 1);
-    renderSubjectChips();
+    _renderSubjectChips();
   };
 
   window._taSave = async function() {
     const courseId = document.getElementById('ta-course-id')?.value;
     const semester = parseInt(document.getElementById('ta-semester')?.value) || 1;
-    const period = document.getElementById('ta-period')?.value || 'noturno';
+    const period   = document.getElementById('ta-period')?.value || 'noturno';
 
-    if (!courseId) { showToast('Selecione seu curso'); return; }
+    if (!courseId)      { showToast('Selecione seu curso'); return; }
     if (!subjects.length) { showToast('Adicione pelo menos uma matéria'); return; }
 
-    const course = FACAPE_COURSES.find(c => c.id === courseId);
+    const course     = FACAPE_COURSES.find(c => c.id === courseId);
     const courseName = course?.name || courseId;
 
-    const btn = document.querySelector('button[onclick="window._taSave()"]');
+    const btn = document.getElementById('ta-save-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
 
     const ok = await saveFullAcademicProfile(uid, {
@@ -924,168 +908,550 @@ window.openTurmasOnboarding = async function() {
       return;
     }
 
-    await syncUserRooms(uid, { institution: FACAPE_INSTITUTION, subjects });
+    showToast('⏳ Entrando nas turmas...');
+    const joinedRooms = await syncUserRooms(uid, {
+      institution: FACAPE_INSTITUTION,
+      courseId,
+      semester,
+      period,
+      subjects,
+    });
 
     closeModal();
-    showToast('✅ Perfil acadêmico salvo! Entrando nas turmas...');
-    const container = document.getElementById('turmas-tab-content');
-    if (container) await renderTurmasTab(uid);
+    _showJoinConfirmation(joinedRooms, uid);
   };
 };
 
-// ── Mural de uma matéria ──────────────────────────────────────────────────────
-
-window.openMural = async function(roomId, subjectName) {
-  const uid = auth.currentUser?.uid;
-  if (!uid) return;
-
-  openModal(`📚 ${subjectName}`, `
-    <div class="mural-container">
-      <div class="mural-new-post">
-        <select id="mural-type" class="form-select mural-type-sel">
-          <option value="discussao">💬 Discussão</option>
-          <option value="aviso">📢 Aviso</option>
-          <option value="link">🔗 Link</option>
-          <option value="documento">📄 Documento (link)</option>
-          <option value="imagem">🖼️ Imagem (link)</option>
-        </select>
-        <textarea id="mural-content" class="form-textarea mural-textarea" placeholder="Escreva um aviso, compartilhe um link ou inicie uma discussão..." rows="3"></textarea>
-        <div style="display:flex;gap:8px;justify-content:flex-end">
-          <button class="btn-primary" onclick="window._muralPost('${roomId}')">Publicar</button>
-        </div>
+function _showJoinConfirmation(joinedRooms, uid) {
+  openModal('🎉 Turmas Configuradas!', `
+    <div class="turmas-confirmation">
+      <div class="confirmation-icon">🎓</div>
+      <p>Você agora faz parte de <strong>${joinedRooms.length} turma${joinedRooms.length !== 1 ? 's' : ''}</strong>:</p>
+      <div class="confirmation-rooms-list">
+        ${joinedRooms.map(r => `
+          <div class="confirmation-room">
+            <span>📚</span>
+            <div>
+              <div class="confirmation-room-name">${esc(r.subjectName)}</div>
+              <div class="confirmation-room-count">👥 ${r.memberCount || 1} aluno${(r.memberCount || 1) !== 1 ? 's' : ''}</div>
+            </div>
+          </div>
+        `).join('')}
       </div>
-      <div id="mural-posts-list" class="mural-posts-list">
-        <div class="turmas-loading">⏳ Carregando mural...</div>
-      </div>
+      <button class="btn-primary" onclick="closeModal(); window._reloadTurmasTab()">
+        Ver minhas turmas →
+      </button>
     </div>
   `);
+}
 
-  subscribeMural(roomId, (posts, err) => {
-    const listEl = document.getElementById('mural-posts-list');
-    if (!listEl) return;
-    if (err || !posts) {
-      listEl.innerHTML = `<div class="turmas-empty">Erro ao carregar o mural. Verifique sua conexão.</div>`;
-      return;
-    }
-    if (!posts.length) {
-      listEl.innerHTML = `<div class="mural-empty">Nenhuma publicação ainda. Seja o primeiro! 🚀</div>`;
-      return;
-    }
-    listEl.innerHTML = posts.map(p => renderMuralPost(p, uid, roomId)).join('');
-  });
+window._reloadTurmasTab = function() {
+  const uid = auth.currentUser?.uid;
+  if (uid) renderTurmasTab(uid);
 };
 
-function renderMuralPost(post, uid, roomId) {
-  const isOwn = post.authorId === uid;
-  const likes = (post.likes || []).length;
-  const liked = (post.likes || []).includes(uid);
-  const avatar = (post.authorName || 'A')[0].toUpperCase();
+// ── Chat View ─────────────────────────────────────────────────────────────────
+window._openChat = async function(rId) {
+  const uid  = auth.currentUser?.uid;
+  const user = auth.currentUser;
+  if (!uid) return;
 
-  const typeColors = {
-    aviso: '#ff6b35',
-    documento: '#1e90ff',
-    imagem: '#2ed573',
-    link: '#a29bfe',
-    discussao: 'var(--accent)',
-  };
-  const color = typeColors[post.type] || 'var(--accent)';
+  const snap = await getDoc(doc(db, 'subject_rooms', rId));
+  if (!snap.exists()) { showToast('Sala não encontrada'); return; }
+  const roomData = snap.data();
 
-  let extra = '';
-  if (post.fileUrl) {
-    if (post.fileType === 'imagem' || post.type === 'imagem') {
-      extra = `<img src="${esc(post.fileUrl)}" alt="imagem" class="mural-post-img" onerror="this.style.display='none'">`;
-    } else if (post.type === 'link' || post.type === 'documento') {
-      extra = `<a href="${esc(post.fileUrl)}" target="_blank" rel="noopener" class="mural-post-link">
-        📎 ${esc(post.fileName || post.fileUrl)}
-      </a>`;
-    }
-  }
+  _unreadCounts[rId] = 0;
+  _currentChatRoomId = rId;
+  await updateRoomRead(uid, rId);
 
-  const contentWithLinks = esc(post.content).replace(
-    /(https?:\/\/[^\s<]+)/g,
-    '<a href="$1" target="_blank" rel="noopener" class="mural-inline-link">$1</a>'
-  );
+  const container = document.getElementById('turmas-tab-content');
+  if (!container) return;
+  container.classList.add('chat-active');
 
-  return `
-    <div class="mural-post" id="mpost-${post.id}">
-      <div class="mural-post-header">
-        <div class="mural-post-avatar">${avatar}</div>
-        <div class="mural-post-meta">
-          <span class="mural-post-author">${esc(post.authorName)}</span>
-          <div class="mural-post-badges">
-            <span class="mural-post-type-badge" style="background:${color}22;color:${color}">
-              ${postTypeIcon(post.type)} ${esc(post.type)}
-            </span>
-            <span class="mural-post-time">${fmtDate(post.createdAt)}</span>
+  const periodLabel = { matutino:'Matutino', vespertino:'Vespertino', noturno:'Noturno', integral:'Integral', ead:'EaD' };
+  const per = periodLabel[roomData.period] || roomData.period || '';
+
+  container.innerHTML = `
+    <div class="turmas-chat-view">
+      <div class="chat-header">
+        <button class="chat-back-btn" onclick="window._closeChat()" aria-label="Voltar">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M19 12H5M12 5l-7 7 7 7"/>
+          </svg>
+        </button>
+        <div class="chat-header-info">
+          <div class="chat-header-title">${esc(roomData.subjectName)}</div>
+          <div class="chat-header-sub" id="chat-online-label">
+            👥 ${roomData.memberCount || 0} membros · <span id="chat-online-count">⏳</span>
           </div>
         </div>
-        ${isOwn ? `<button class="mural-del-btn" onclick="window._muralDelete('${roomId}','${post.id}')" title="Excluir">🗑️</button>` : ''}
       </div>
-      <div class="mural-post-content">${contentWithLinks}</div>
-      ${extra}
-      <div class="mural-post-actions">
-        <button class="mural-like-btn ${liked ? 'liked' : ''}" onclick="window._muralLike('${roomId}','${post.id}')">
-          ${liked ? '❤️' : '🤍'} ${likes}
+
+      <div class="chat-messages" id="chat-messages">
+        <div class="chat-loading">⏳ Carregando mensagens...</div>
+      </div>
+
+      <div class="chat-typing-indicator" id="chat-typing" style="display:none"></div>
+
+      <div class="chat-input-bar">
+        <textarea id="chat-input-text" class="chat-input-textarea"
+          placeholder="Mensagem..." rows="1"
+          oninput="window._chatInputResize(this)"
+          onkeydown="window._chatInputKeydown(event, '${rId}')"></textarea>
+        <button class="chat-send-btn" onclick="window._chatSend('${rId}')" aria-label="Enviar">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+          </svg>
         </button>
+      </div>
+    </div>
+  `;
+
+  // Online count (assíncrono)
+  getOnlineCount(rId).then(count => {
+    const el = document.getElementById('chat-online-count');
+    if (el) el.textContent = `🟢 ${count} online`;
+  });
+
+  // Listener de mensagens
+  const q = query(
+    collection(db, 'subject_rooms', rId, 'messages'),
+    orderBy('createdAt', 'asc'),
+    limit(100)
+  );
+
+  let isFirstLoad = true;
+  _unsubChat = onSnapshot(q, (chatSnap) => {
+    const messagesEl = document.getElementById('chat-messages');
+    if (!messagesEl) return;
+
+    if (chatSnap.empty) {
+      messagesEl.innerHTML = '<div class="chat-empty">Nenhuma mensagem ainda. Diga olá! 👋</div>';
+      return;
+    }
+
+    const messages = chatSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    messagesEl.innerHTML = _renderChatMessages(messages, uid);
+    _addLongPressHandlers(uid, rId);
+
+    if (isFirstLoad) {
+      isFirstLoad = false;
+      _scrollToBottom(messagesEl);
+    } else {
+      const { scrollTop, scrollHeight, clientHeight } = messagesEl;
+      if (scrollHeight - scrollTop - clientHeight < 150) _scrollToBottom(messagesEl);
+    }
+  }, (err) => {
+    console.error('[turmas/chat] Listener error:', err);
+    const el = document.getElementById('chat-messages');
+    if (el) el.innerHTML = '<div class="chat-error">Erro ao carregar. Verifique sua conexão.</div>';
+  });
+
+  // Listener de typing
+  _unsubTyping = onSnapshot(collection(db, 'subject_rooms', rId, 'typing'), (typSnap) => {
+    const typers = typSnap.docs.filter(d => d.id !== uid).map(d => d.data().name);
+    const el = document.getElementById('chat-typing');
+    if (!el) return;
+    if (typers.length > 0) {
+      el.style.display = 'block';
+      el.textContent = typers.length === 1
+        ? `${typers[0]} está digitando...`
+        : `${typers.length} pessoas estão digitando...`;
+    } else {
+      el.style.display = 'none';
+    }
+  });
+
+  // Foca o input
+  setTimeout(() => document.getElementById('chat-input-text')?.focus(), 300);
+};
+
+window._closeChat = function() {
+  if (_unsubChat)   { _unsubChat();   _unsubChat = null; }
+  if (_unsubTyping) { _unsubTyping(); _unsubTyping = null; }
+
+  const uid = auth.currentUser?.uid;
+  if (uid && _currentChatRoomId) _clearTyping(_currentChatRoomId, uid);
+
+  _currentChatRoomId = null;
+
+  const container = document.getElementById('turmas-tab-content');
+  if (container) container.classList.remove('chat-active');
+
+  const uidLocal = auth.currentUser?.uid;
+  if (uidLocal) renderTurmasTab(uidLocal);
+};
+
+function _renderChatMessages(messages, uid) {
+  let lastDateStr = null;
+  const parts = [];
+
+  messages.forEach(msg => {
+    const date = msg.createdAt?.toDate?.() || new Date();
+    const dateStr = date.toLocaleDateString('pt-BR');
+    if (dateStr !== lastDateStr) {
+      lastDateStr = dateStr;
+      parts.push(`<div class="chat-day-sep"><span>${esc(formatDaySeparator(date))}</span></div>`);
+    }
+    parts.push(_renderMsgBubble(msg, uid));
+  });
+
+  return parts.join('');
+}
+
+function _renderMsgBubble(msg, uid) {
+  const isOwn = msg.authorId === uid;
+
+  if (msg.deleted) {
+    return `
+      <div class="chat-msg-row ${isOwn ? 'own' : 'other'}">
+        <div class="chat-bubble deleted"><em>Mensagem apagada</em></div>
+      </div>
+    `;
+  }
+
+  // Detecta links no texto
+  const textHtml = esc(msg.text || '').replace(
+    /(https?:\/\/[^\s&lt;&gt;]+)/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer" class="chat-link">$1</a>'
+  );
+
+  const fileHtml = msg.fileUrl
+    ? `<a href="${esc(msg.fileUrl)}" target="_blank" rel="noopener" class="chat-file">📎 ${esc(msg.fileName || 'Arquivo')}</a>`
+    : '';
+
+  const delBtn = isOwn
+    ? `<button class="chat-del-btn" onclick="window._chatDelete('${_currentChatRoomId}','${msg.id}')" title="Apagar">🗑️</button>`
+    : '';
+
+  return `
+    <div class="chat-msg-row ${isOwn ? 'own' : 'other'}" data-msg-id="${msg.id}">
+      ${!isOwn ? `<div class="chat-msg-author">${esc(msg.authorName || 'Colega')}</div>` : ''}
+      <div class="chat-bubble ${isOwn ? 'own' : 'other'}">
+        ${delBtn}
+        <div class="chat-text">${textHtml}${fileHtml}</div>
+        <div class="chat-time">${fmtChatTime(msg.createdAt)}</div>
       </div>
     </div>
   `;
 }
 
-window._muralPost = async function(roomId) {
-  const content = document.getElementById('mural-content')?.value?.trim();
-  const type = document.getElementById('mural-type')?.value || 'discussao';
-  if (!content) { showToast('Escreva algo antes de publicar'); return; }
+function _scrollToBottom(el) {
+  if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+}
 
-  const btn = document.querySelector('button[onclick*="_muralPost"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Publicando...'; }
+function _addLongPressHandlers(uid, rId) {
+  document.querySelectorAll('.chat-msg-row.own').forEach(row => {
+    const msgId = row.dataset.msgId;
+    if (!msgId) return;
+    let timer = null;
+    row.addEventListener('touchstart', () => {
+      timer = setTimeout(() => {
+        if (confirm('Apagar esta mensagem?')) window._chatDelete(rId, msgId);
+      }, 650);
+    }, { passive: true });
+    row.addEventListener('touchend',  () => clearTimeout(timer));
+    row.addEventListener('touchmove', () => clearTimeout(timer));
+  });
+}
 
-  let fileUrl = null, fileName = null;
-  const urlMatch = content.match(/https?:\/\/[^\s]+/);
-  if ((type === 'link' || type === 'documento' || type === 'imagem') && urlMatch) {
-    fileUrl = urlMatch[0];
-    fileName = fileUrl.split('/').pop().split('?')[0] || fileUrl;
+window._chatSend = async function(rId) {
+  const input = document.getElementById('chat-input-text');
+  const text = input?.value?.trim();
+  if (!text) return;
+
+  const uid  = auth.currentUser?.uid;
+  const user = auth.currentUser;
+  if (!uid) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+  _clearTyping(rId, uid);
+
+  await sendChatMessage(rId, uid, text);
+};
+
+window._chatInputKeydown = function(e, rId) {
+  if (e.key === 'Enter' && !e.shiftKey && window.innerWidth >= 768) {
+    e.preventDefault();
+    window._chatSend(rId);
   }
+};
 
-  const id = await postToMural(roomId, { type, content, fileUrl, fileName });
-  if (btn) { btn.disabled = false; btn.textContent = 'Publicar'; }
-  if (id) {
-    const ta = document.getElementById('mural-content');
-    if (ta) ta.value = '';
-    showToast('✅ Publicado no mural!');
-  } else {
-    showToast('Erro ao publicar. Tente novamente.');
+window._chatInputResize = function(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 96) + 'px';
+
+  const uid  = auth.currentUser?.uid;
+  const user = auth.currentUser;
+  if (uid && _currentChatRoomId) {
+    _setTyping(_currentChatRoomId, uid, user?.displayName || 'Colega');
   }
 };
 
-window._muralDelete = async function(roomId, postId) {
-  if (!confirm('Excluir esta publicação?')) return;
+window._chatDelete = async function(rId, msgId) {
   const uid = auth.currentUser?.uid;
-  const ok = await deletePost(roomId, postId, uid);
-  if (!ok) showToast('Não foi possível excluir.');
+  if (!uid) return;
+  if (!confirm('Apagar esta mensagem?')) return;
+  const ok = await softDeleteMessage(rId, msgId, uid);
+  if (!ok) showToast('Não foi possível apagar a mensagem.');
 };
 
-window._muralLike = async function(roomId, postId) {
+// ── Inicialização ─────────────────────────────────────────────────────────────
+export function initTurmas() {
+  _injectStyles();
   const uid = auth.currentUser?.uid;
-  if (!uid) { showToast('Faça login para curtir'); return; }
-  await toggleLikePost(roomId, postId, uid);
-};
+  if (uid) startPresence(uid);
+}
 
-// ── CSS adicional injetado (estilos para upload IA e quick-add) ───────────────
-
-(function injectTurmasExtraStyles() {
-  if (document.getElementById('turmas-extra-styles')) return;
+function _injectStyles() {
+  if (document.getElementById('turmas-chat-styles')) return;
   const style = document.createElement('style');
-  style.id = 'turmas-extra-styles';
+  style.id = 'turmas-chat-styles';
   style.textContent = `
+    /* ── Chat overlay ── */
+    #turmas-tab-content.chat-active {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 100;
+      background: var(--bg, #0f0f23);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .turmas-chat-view {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    .chat-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border, #2a2a3e);
+      flex-shrink: 0;
+      background: var(--bg-secondary, #1a1a2e);
+    }
+    .chat-back-btn {
+      background: none;
+      border: none;
+      color: var(--text, #e0e0e0);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .chat-back-btn:active { background: rgba(255,255,255,.1); }
+    .chat-header-info { flex: 1; min-width: 0; }
+    .chat-header-title {
+      font-weight: 600;
+      font-size: 15px;
+      color: var(--text, #e0e0e0);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .chat-header-sub { font-size: 12px; color: var(--text-muted, #888); margin-top: 1px; }
+
+    /* ── Messages area ── */
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 12px 4px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .chat-loading, .chat-empty, .chat-error {
+      text-align: center;
+      color: var(--text-muted, #888);
+      padding: 32px 16px;
+      font-size: 14px;
+    }
+
+    /* ── Day separator ── */
+    .chat-day-sep {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 16px 0 8px;
+    }
+    .chat-day-sep span {
+      font-size: 11px;
+      color: var(--text-muted, #888);
+      background: var(--bg-secondary, #1a1a2e);
+      padding: 3px 10px;
+      border-radius: 12px;
+    }
+
+    /* ── Message rows ── */
+    .chat-msg-row {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 6px;
+    }
+    .chat-msg-row.own { align-items: flex-end; }
+    .chat-msg-row.other { align-items: flex-start; }
+    .chat-msg-author {
+      font-size: 11px;
+      color: var(--accent, #7c5cfc);
+      font-weight: 600;
+      margin-bottom: 2px;
+      padding-left: 4px;
+    }
+
+    /* ── Bubbles ── */
+    .chat-bubble {
+      position: relative;
+      max-width: min(75vw, 320px);
+      padding: 8px 12px 22px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+    .chat-bubble.own {
+      background: var(--accent, #7c5cfc);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .chat-bubble.other {
+      background: var(--bg-secondary, #1e1e38);
+      color: var(--text, #e0e0e0);
+      border-bottom-left-radius: 4px;
+    }
+    .chat-bubble.deleted {
+      background: transparent;
+      border: 1px solid var(--border, #333);
+      color: var(--text-muted, #888);
+      font-style: italic;
+      padding: 6px 12px;
+    }
+    .chat-time {
+      position: absolute;
+      bottom: 4px;
+      right: 10px;
+      font-size: 10px;
+      opacity: .7;
+    }
+    .chat-del-btn {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      background: none;
+      border: none;
+      font-size: 12px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity .15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .chat-bubble:hover .chat-del-btn,
+    .chat-bubble:active .chat-del-btn { opacity: .8; }
+    .chat-link {
+      color: rgba(255,255,255,.85);
+      text-decoration: underline;
+      word-break: break-all;
+    }
+    .chat-bubble.other .chat-link { color: var(--accent, #7c5cfc); }
+    .chat-file {
+      display: block;
+      margin-top: 4px;
+      font-size: 13px;
+      opacity: .9;
+      text-decoration: none;
+    }
+
+    /* ── Typing indicator ── */
+    .chat-typing-indicator {
+      font-size: 12px;
+      color: var(--text-muted, #888);
+      padding: 2px 16px 4px;
+      font-style: italic;
+      flex-shrink: 0;
+    }
+
+    /* ── Input bar ── */
+    .chat-input-bar {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      padding: 8px 12px;
+      border-top: 1px solid var(--border, #2a2a3e);
+      background: var(--bg, #0f0f23);
+      flex-shrink: 0;
+    }
+    .chat-input-textarea {
+      flex: 1;
+      background: var(--bg-secondary, #1e1e38);
+      border: 1px solid var(--border, #333);
+      border-radius: 20px;
+      padding: 8px 14px;
+      color: var(--text, #e0e0e0);
+      font-size: 14px;
+      font-family: inherit;
+      resize: none;
+      line-height: 1.4;
+      max-height: 96px;
+      overflow-y: auto;
+      outline: none;
+    }
+    .chat-input-textarea:focus { border-color: var(--accent, #7c5cfc); }
+    .chat-send-btn {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: var(--accent, #7c5cfc);
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform .1s;
+    }
+    .chat-send-btn:active { transform: scale(.9); }
+
+    /* ── Room cards badges ── */
+    .turma-unread-badge {
+      background: #e74c3c;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      border-radius: 10px;
+      padding: 2px 7px;
+      min-width: 20px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .turma-card-meta {
+      font-size: 11px;
+      color: var(--text-muted, #888);
+      margin-top: 1px;
+    }
+
+    /* ── Onboarding extras ── */
+    .turmas-inst-block {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: var(--bg-secondary, #1a1a2e);
+      border-radius: 8px;
+      border: 1px solid var(--border, #333);
+      font-size: 18px;
+    }
+    .turmas-inst-name { font-weight: 600; color: var(--text, #e0e0e0); }
+    .turmas-inst-city { font-size: 12px; color: var(--text-muted, #888); }
     .turmas-ia-upload {
       border: 2px dashed var(--accent, #7c5cfc);
       border-radius: 10px;
-      background: rgba(124, 92, 252, 0.05);
-      transition: background 0.2s;
-    }
-    .turmas-ia-upload:hover {
-      background: rgba(124, 92, 252, 0.1);
+      background: rgba(124,92,252,.05);
     }
     .turmas-semester-subjects {
       padding: 10px;
@@ -1093,36 +1459,61 @@ window._muralLike = async function(roomId, postId) {
       border-radius: 8px;
       border: 1px solid var(--border, #333);
     }
-    .turmas-quick-sub-btn:hover {
-      background: var(--accent, #7c5cfc) !important;
-      color: #fff !important;
+    .turmas-quick-sub-btn {
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--accent, #7c5cfc);
+      background: transparent;
+      color: var(--accent, #7c5cfc);
+      cursor: pointer;
+      font-size: 12px;
+      -webkit-tap-highlight-color: transparent;
     }
+    .turmas-quick-sub-btn:active { background: var(--accent, #7c5cfc); color: #fff; }
+    .turmas-add-all-btn {
+      margin-top: 8px;
+      font-size: 12px;
+      padding: 4px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border, #333);
+      background: transparent;
+      color: var(--text-muted, #888);
+      cursor: pointer;
+    }
+    .btn-link {
+      background: none;
+      border: none;
+      color: var(--accent, #7c5cfc);
+      cursor: pointer;
+      text-decoration: underline;
+      font-size: inherit;
+    }
+
+    /* ── Confirmation screen ── */
+    .turmas-confirmation {
+      text-align: center;
+      padding: 8px 0;
+    }
+    .turmas-confirmation .confirmation-icon { font-size: 40px; margin-bottom: 8px; }
+    .confirmation-rooms-list {
+      margin: 16px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 250px;
+      overflow-y: auto;
+    }
+    .confirmation-room {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: var(--bg-secondary, #1a1a2e);
+      border-radius: 10px;
+      text-align: left;
+    }
+    .confirmation-room-name { font-weight: 600; font-size: 13px; }
+    .confirmation-room-count { font-size: 12px; color: var(--text-muted, #888); }
   `;
   document.head.appendChild(style);
-})();
-
-// ── Inicialização ─────────────────────────────────────────────────────────────
-
-export function initTurmas() {
-  injectTurmasExtraStylesIfNeeded();
-  const modalOverlay = document.getElementById('modal-overlay');
-  if (modalOverlay) {
-    modalOverlay.addEventListener('click', () => {
-      if (_unsubMural) { _unsubMural(); _unsubMural = null; _currentRoomId = null; }
-    });
-  }
-}
-
-function injectTurmasExtraStylesIfNeeded() {
-  if (!document.getElementById('turmas-extra-styles')) {
-    const style = document.createElement('style');
-    style.id = 'turmas-extra-styles';
-    style.textContent = `
-      .turmas-ia-upload { border:2px dashed var(--accent,#7c5cfc); border-radius:10px; background:rgba(124,92,252,.05); transition:background .2s; }
-      .turmas-ia-upload:hover { background:rgba(124,92,252,.1); }
-      .turmas-semester-subjects { padding:10px; background:var(--bg-secondary,#1a1a2e); border-radius:8px; border:1px solid var(--border,#333); }
-      .turmas-quick-sub-btn:hover { background:var(--accent,#7c5cfc)!important; color:#fff!important; }
-    `;
-    document.head.appendChild(style);
-  }
 }
