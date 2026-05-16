@@ -176,14 +176,14 @@ export async function renderAcademicProfileSection(uid) {
 
       <div style="display:flex;gap:10px">
         <div class="accs-form-group" style="flex:1">
-          <label class="accs-label">Semestre</label>
+          <label class="accs-label">Período</label>
           <input class="accs-input" type="text"
             value="${semester ? semester + 'º' : ''}" placeholder="—"
             readonly style="${roStyle}">
           <input type="hidden" id="sp-semester" value="${semester}">
         </div>
         <div class="accs-form-group" style="flex:1">
-          <label class="accs-label">Período</label>
+          <label class="accs-label">Turno</label>
           <input class="accs-input" type="text"
             value="${escapeForAttr(periodStr)}" placeholder="—"
             readonly style="${roStyle}">
