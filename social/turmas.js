@@ -558,69 +558,169 @@ export async function renderTurmasTab(uid) {
 
   container.classList.remove('chat-active');
 
-  const profile = await loadFullAcademicProfile(uid);
+  // Usa _inferProfileFromApp para pegar courseId mesmo que subjects não estejam salvos
+  const saved   = await loadFullAcademicProfile(uid) || {};
+  const profile = _inferProfileFromApp(saved);
 
-  if (!profile?.institution || !profile?.subjects?.length) {
+  if (!profile.courseId) {
     _renderOnboarding(container, uid);
     return;
   }
 
-  const periodLabel = { matutino: 'Matutino', vespertino: 'Vespertino', noturno: 'Noturno', integral: 'Integral', ead: 'EaD' };
+  _renderTurmaServers(container, uid, profile);
+}
+
+// ── Lista de turmas do curso (como servidores) ─────────────────────────────────
+function _renderTurmaServers(container, uid, profile) {
+  const course = FACAPE_COURSES.find(c => c.id === profile.courseId);
+  if (!course) { _renderOnboarding(container, uid); return; }
+
+  const PERIOD_LABEL = { matutino:'Matutino', vespertino:'Vespertino', noturno:'Noturno', integral:'Integral', ead:'EaD' };
+  const PERIOD_EMOJI = { matutino:'☀️', vespertino:'🌤️', noturno:'🌙', integral:'📖', ead:'💻' };
+  const semester = profile.semester || 1;
+  const myPeriod = profile.period   || '';
 
   container.innerHTML = `
     <div class="turmas-profile-bar">
       <div class="turmas-profile-info">
         <span class="turmas-inst">${esc(FACAPE_DISPLAY_NAME)}</span>
-        <span class="turmas-course">${esc(profile.course)} · ${profile.semester}º sem · ${esc(periodLabel[profile.period] || profile.period)}</span>
+        <span class="turmas-course">${esc(course.name)} · ${semester}º sem · ${esc(PERIOD_LABEL[myPeriod] || myPeriod || '—')}</span>
       </div>
-      <button class="turmas-edit-btn" onclick="window.openAcademicSettings()">✏️ Editar</button>
+      <button class="turmas-edit-btn" onclick="window.openAcademicSettings()">✏️</button>
     </div>
-    <div class="turmas-rooms-list" id="turmas-rooms-list">
-      <div class="turmas-loading">⏳ Carregando suas turmas...</div>
+
+    <div class="turmas-servers-header">
+      <div class="turmas-servers-title">🏛️ Turmas de ${esc(course.sigla)}</div>
+      <p class="turmas-servers-sub">Selecione uma turma para ver as salas de matérias</p>
+    </div>
+
+    <div class="turmas-servers-list">
+      ${course.periodo.map(period => {
+        const isMine   = period === myPeriod;
+        const subCount = (course.subjects[semester] || []).length;
+        return `
+          <div class="turma-server-card${isMine ? ' turma-mine' : ''}"
+            onclick="window._enterTurma('${esc(profile.courseId)}','${semester}','${period}')">
+            <div class="turma-server-icon">${PERIOD_EMOJI[period] || '🎓'}</div>
+            <div class="turma-server-info">
+              <div class="turma-server-name">
+                ${esc(course.sigla)} ${esc(PERIOD_LABEL[period] || period)}
+                ${isMine ? '<span class="turma-mine-badge">Minha turma</span>' : ''}
+              </div>
+              <div class="turma-server-meta" id="ts-meta-${period}">
+                ${semester}º Semestre · ${subCount} sala${subCount !== 1 ? 's' : ''}
+              </div>
+            </div>
+            <div class="turma-server-arrow">›</div>
+          </div>
+        `;
+      }).join('')}
     </div>
   `;
 
-  const rooms = await listMyRooms(uid);
-  const listEl = document.getElementById('turmas-rooms-list');
-  if (!listEl) return;
+  // Carrega contagem de membros em background (não-fatal)
+  _loadTurmaMemberCounts(course.periodo, profile.courseId);
+}
 
-  if (!rooms.length) {
-    listEl.innerHTML = `<div class="turmas-empty">Nenhuma turma encontrada.
-      <button class="btn-link" onclick="window.openAcademicSettings()">Adicionar matérias</button>
-    </div>`;
-    return;
+async function _loadTurmaMemberCounts(periods, courseId) {
+  try {
+    const snap = await getDocs(query(collection(db, 'user_profiles'), where('courseId', '==', courseId)));
+    const byPeriod = {};
+    snap.docs.forEach(d => {
+      const p = d.data().period || '';
+      byPeriod[p] = (byPeriod[p] || 0) + 1;
+    });
+    periods.forEach(period => {
+      const count = byPeriod[period] || 0;
+      const el    = document.getElementById(`ts-meta-${period}`);
+      if (el && count > 0) {
+        const curr = el.textContent;
+        el.textContent = curr + ` · 👥 ${count} aluno${count !== 1 ? 's' : ''}`;
+      }
+    });
+  } catch { /* non-fatal */ }
+}
+
+// ── Entrar em uma turma (mostra salas de matérias) ────────────────────────────
+window._enterTurma = async function(courseId, semester, period) {
+  const container = document.getElementById('turmas-tab-content');
+  if (!container) return;
+
+  const course = FACAPE_COURSES.find(c => c.id === courseId);
+  if (!course) return;
+
+  const uid    = auth.currentUser?.uid;
+  const semInt = parseInt(semester);
+  const subjectNames = course.subjects[semInt] || [];
+
+  const PERIOD_LABEL = { matutino:'Matutino', vespertino:'Vespertino', noturno:'Noturno', integral:'Integral', ead:'EaD' };
+
+  const rooms = subjectNames.map(name => ({
+    id:          buildRoomId(FACAPE_INSTITUTION, courseId, semInt, period, name, ''),
+    subjectName: name,
+  }));
+
+  container.innerHTML = `
+    <div class="turmas-inner-header">
+      <button class="turmas-back-btn" onclick="window._renderTurmaListGlobal()">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M19 12H5M12 5l-7 7 7 7"/>
+        </svg>
+      </button>
+      <div class="turmas-inner-title">
+        ${esc(course.sigla)} ${esc(PERIOD_LABEL[period] || period)} · ${semInt}º Sem
+      </div>
+    </div>
+
+    <div class="turmas-rooms-list" id="turmas-rooms-list">
+      ${rooms.length ? rooms.map(room => `
+        <div class="turma-card" data-room-id="${room.id}"
+          onclick="window._enterSubjectRoom('${room.id}','${courseId}','${semInt}','${period}','${encodeURIComponent(room.subjectName)}')">
+          <div class="turma-card-left">
+            <div class="turma-card-icon">💬</div>
+            <div class="turma-card-info">
+              <span class="turma-card-name">${esc(room.subjectName)}</span>
+            </div>
+          </div>
+          <div class="turma-card-arrow">›</div>
+        </div>
+      `).join('') : `<div class="turmas-empty">Nenhuma matéria encontrada para este semestre.</div>`}
+    </div>
+  `;
+
+  // Carrega não-lidos e badge listeners em background
+  if (uid) {
+    const unreadArr = await Promise.all(rooms.map(r => getUnreadCount(uid, r.id)));
+    unreadArr.forEach((count, i) => {
+      _unreadCounts[rooms[i].id] = count;
+      if (count > 0) _updateRoomCardBadge(rooms[i].id, count);
+    });
+    _initRoomBadgeListeners(uid, rooms);
+  }
+};
+
+// ── Entrar em uma sala de matéria (lazy join + chat) ─────────────────────────
+window._enterSubjectRoom = async function(roomId, courseId, semester, period, encodedSubject) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+
+  const subjectName = decodeURIComponent(encodedSubject);
+
+  try {
+    await ensureSubjectRoom(FACAPE_INSTITUTION, courseId, parseInt(semester), period, subjectName, '');
+    await joinSubjectRoom(roomId, uid);
+  } catch (err) {
+    console.warn('[turmas] ensureSubjectRoom:', err);
   }
 
-  // Carrega contagem de não lidos em paralelo
-  const unreadArr = await Promise.all(rooms.map(r => getUnreadCount(uid, r.id)));
-  unreadArr.forEach((count, i) => { _unreadCounts[rooms[i].id] = count; });
+  window._openChat(roomId);
+};
 
-  const course = FACAPE_COURSES.find(c => c.id === profile.courseId);
-  const sigla = course?.sigla || profile.courseId || '';
-
-  listEl.innerHTML = rooms.map((room, i) => {
-    const unread = unreadArr[i];
-    const sem  = room.semester || profile.semester;
-    const per  = periodLabel[room.period || profile.period] || room.period || profile.period;
-    return `
-      <div class="turma-card" data-room-id="${room.id}"
-           onclick="window._openChat('${room.id}')">
-        <div class="turma-card-left">
-          <div class="turma-card-icon">📚</div>
-          <div class="turma-card-info">
-            <span class="turma-card-name">${esc(room.subjectName)}</span>
-            <span class="turma-card-meta">${esc(sigla)} · ${sem}º sem · ${esc(per)}</span>
-            <span class="turma-card-members">👥 ${room.memberCount || 1} aluno${(room.memberCount || 1) !== 1 ? 's' : ''}</span>
-          </div>
-        </div>
-        ${unread > 0 ? `<span class="turma-unread-badge">${unread > 99 ? '99+' : unread}</span>` : ''}
-        <div class="turma-card-arrow">›</div>
-      </div>
-    `;
-  }).join('');
-
-  _initRoomBadgeListeners(uid, rooms);
-}
+// ── Helper global: volta para a lista de turmas ────────────────────────────────
+window._renderTurmaListGlobal = function() {
+  const uid = auth.currentUser?.uid;
+  if (uid) renderTurmasTab(uid);
+};
 
 // ── Onboarding ────────────────────────────────────────────────────────────────
 function _renderOnboarding(container, uid) {
@@ -1572,6 +1672,249 @@ function _injectStyles() {
     }
     .confirmation-room-name { font-weight: 600; font-size: 13px; }
     .confirmation-room-count { font-size: 12px; color: var(--text-muted, #888); }
+
+    /* ── Profile bar (top of turmas screen) ── */
+    .turmas-profile-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--bg-secondary, #1a1a2e);
+      border-bottom: 1px solid var(--border, #2a2a3e);
+      flex-shrink: 0;
+    }
+    .turmas-profile-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .turmas-inst {
+      font-size: 11px;
+      color: var(--text-muted, #888);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      font-weight: 600;
+    }
+    .turmas-course {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text, #e0e0e0);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .turmas-edit-btn {
+      background: none;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 8px;
+      color: var(--text-muted, #888);
+      flex-shrink: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .turmas-edit-btn:active { background: rgba(255,255,255,.08); }
+
+    /* ── Servers list header ── */
+    .turmas-servers-header {
+      padding: 20px 16px 8px;
+    }
+    .turmas-servers-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text, #e0e0e0);
+      margin-bottom: 4px;
+    }
+    .turmas-servers-sub {
+      font-size: 13px;
+      color: var(--text-muted, #888);
+      margin: 0;
+    }
+    .turmas-servers-list {
+      padding: 8px 12px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* ── Server card ── */
+    .turma-server-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 14px;
+      background: var(--bg-secondary, #1a1a2e);
+      border: 1px solid var(--border, #2a2a3e);
+      border-radius: 14px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: border-color .15s, background .15s;
+    }
+    .turma-server-card:active { background: rgba(255,255,255,.04); }
+    .turma-server-card.turma-mine {
+      border-color: var(--accent, #7c5cfc);
+      background: rgba(124,92,252,.07);
+    }
+    .turma-server-icon {
+      font-size: 28px;
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,.05);
+      border-radius: 12px;
+      flex-shrink: 0;
+    }
+    .turma-server-info { flex: 1; min-width: 0; }
+    .turma-server-name {
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text, #e0e0e0);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .turma-server-meta {
+      font-size: 12px;
+      color: var(--text-muted, #888);
+      margin-top: 3px;
+    }
+    .turma-mine-badge {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--accent, #7c5cfc);
+      background: rgba(124,92,252,.15);
+      border-radius: 10px;
+      padding: 2px 8px;
+    }
+    .turma-server-arrow {
+      font-size: 22px;
+      color: var(--text-muted, #888);
+      flex-shrink: 0;
+      line-height: 1;
+    }
+
+    /* ── Inner header (back button + title) ── */
+    .turmas-inner-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border, #2a2a3e);
+      background: var(--bg-secondary, #1a1a2e);
+      flex-shrink: 0;
+    }
+    .turmas-back-btn {
+      background: none;
+      border: none;
+      color: var(--text, #e0e0e0);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      -webkit-tap-highlight-color: transparent;
+      flex-shrink: 0;
+    }
+    .turmas-back-btn:active { background: rgba(255,255,255,.1); }
+    .turmas-inner-title {
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--text, #e0e0e0);
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ── Room list (subject rooms) ── */
+    .turmas-rooms-list {
+      padding: 8px 12px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .turma-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      background: var(--bg-secondary, #1a1a2e);
+      border: 1px solid var(--border, #2a2a3e);
+      border-radius: 12px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: border-color .15s;
+    }
+    .turma-card:active { border-color: var(--accent, #7c5cfc); }
+    .turma-card-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
+    }
+    .turma-card-icon {
+      font-size: 22px;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,.05);
+      border-radius: 10px;
+      flex-shrink: 0;
+    }
+    .turma-card-info { flex: 1; min-width: 0; }
+    .turma-card-name {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--text, #e0e0e0);
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .turma-card-arrow {
+      font-size: 20px;
+      color: var(--text-muted, #888);
+      flex-shrink: 0;
+      margin-left: 8px;
+    }
+    .turmas-empty {
+      text-align: center;
+      color: var(--text-muted, #888);
+      font-size: 14px;
+      padding: 32px 16px;
+    }
+
+    /* ── Onboarding screen ── */
+    .turmas-onboarding {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 24px;
+      text-align: center;
+      gap: 12px;
+    }
+    .turmas-onboarding-icon { font-size: 52px; }
+    .turmas-onboarding-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text, #e0e0e0);
+      margin: 0;
+    }
+    .turmas-onboarding-desc {
+      font-size: 14px;
+      color: var(--text-muted, #888);
+      margin: 0;
+      max-width: 280px;
+    }
+    .turmas-onboarding-btn {
+      margin-top: 8px;
+      padding: 12px 28px;
+      font-size: 15px;
+    }
   `;
   document.head.appendChild(style);
 }
