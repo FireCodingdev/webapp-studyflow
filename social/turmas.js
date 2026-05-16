@@ -608,7 +608,7 @@ function _renderTurmaServers(container, uid, profile) {
                 ${isMine ? '<span class="turma-mine-badge">Minha turma</span>' : ''}
               </div>
               <div class="turma-server-meta" id="ts-meta-${period}">
-                ${semester}º Semestre · ${subCount} sala${subCount !== 1 ? 's' : ''}
+                ${semester}º Período · ${subCount} sala${subCount !== 1 ? 's' : ''}
               </div>
             </div>
             <div class="turma-server-arrow">›</div>
