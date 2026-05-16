@@ -651,7 +651,16 @@ window._enterTurma = async function(courseId, semester, period) {
 
   const uid    = auth.currentUser?.uid;
   const semInt = parseInt(semester);
-  const subjectNames = course.subjects[semInt] || [];
+
+  // Se for a turma do próprio usuário, usa as matérias do perfil (vindas do portal FACAPE)
+  // Para turmas de outros períodos, usa o dado estático como fallback
+  let subjectNames = course.subjects[semInt] || [];
+  if (uid) {
+    const myProfile = await loadFullAcademicProfile(uid).catch(() => null);
+    if (myProfile?.courseId === courseId && myProfile?.period === period && myProfile?.subjects?.length) {
+      subjectNames = myProfile.subjects.map(s => s.name || s.nome || '').filter(Boolean);
+    }
+  }
 
   const PERIOD_LABEL = { matutino:'Matutino', vespertino:'Vespertino', noturno:'Noturno', integral:'Integral', ead:'EaD' };
 
