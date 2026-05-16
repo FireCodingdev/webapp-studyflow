@@ -355,14 +355,14 @@ export function initIA(STATE, hooks) {
   window.abrirImportarCronograma = () => abrirModalImportarCronograma(STATE, hooks);
   window.abrirImportarSillabus   = () => abrirModalImportarSillabus(STATE, hooks);
 
-  // Adiciona o botão "Importar por foto" na página de cronograma
+  // Adiciona os botões de importação na página de Materiais
   // (injetado dinamicamente para não exigir alteração no HTML)
   function injetarBotaoIA() {
     // Evita duplicatas
     if (document.getElementById('ia-import-btn')) return;
 
-    const scheduleHeader = document.getElementById('schedule-calendar');
-    if (!scheduleHeader) return;
+    const anchor = document.getElementById('links-list');
+    if (!anchor) return;
 
     const btn = document.createElement('button');
     btn.id        = 'ia-import-btn';
@@ -376,27 +376,26 @@ export function initIA(STATE, hooks) {
       <span>Importar Horário de Aulas</span>
     `;
     btn.addEventListener('click', () => abrirModalImportarCronograma(STATE, hooks));
-    scheduleHeader.insertAdjacentElement('afterend', btn);
+    anchor.insertAdjacentElement('afterend', btn);
   }
 
   // Observa mudanças de página para injetar o botão
   const observer = new MutationObserver(() => {
-    const schedulePage = document.getElementById('page-schedule');
-    if (schedulePage?.classList.contains('active')) injetarBotaoIA();
+    const linksPage = document.getElementById('page-links');
+    if (linksPage?.classList.contains('active')) injetarBotaoIA();
   });
 
   observer.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
 
-  // Injeta imediatamente se já estiver na página de cronograma
+  // Injeta imediatamente se já estiver na página de materiais
   injetarBotaoIA();
 
-  // ── Botão de provas na aba Atividades ──────────────────────────────────────
+  // ── Botão de provas na aba Materiais ───────────────────────────────────────
   function injetarBotaoProvas() {
     if (document.getElementById('ia-exams-btn')) return;
 
-    // Botão agora fica na aba Cronograma, abaixo do botão de sillabus
-    const scheduleHeader = document.getElementById('schedule-calendar');
-    if (!scheduleHeader) return;
+    const fallback = document.getElementById('links-list');
+    if (!fallback) return;
 
     const btn = document.createElement('button');
     btn.id        = 'ia-exams-btn';
@@ -410,30 +409,26 @@ export function initIA(STATE, hooks) {
       <span>Importar Calendário de Provas</span>
     `;
     btn.addEventListener('click', () => abrirModalImportarProvas(STATE, hooks));
-    // Insere abaixo do botão de sillabus (ou do de foto se sillabus não existir)
-    const sillabusBtn = document.getElementById('ia-sillabus-btn');
-    const fotoBtn = document.getElementById('ia-import-btn');
-    const anchor = sillabusBtn || fotoBtn;
-    if (anchor) {
-      anchor.insertAdjacentElement('afterend', btn);
-    } else {
-      scheduleHeader.insertAdjacentElement('afterend', btn);
-    }
+    // Insere abaixo do botão de sillabus, ou de foto, ou do links-list como fallback
+    const anchor = document.getElementById('ia-sillabus-btn')
+                || document.getElementById('ia-import-btn')
+                || fallback;
+    anchor.insertAdjacentElement('afterend', btn);
   }
 
-  // Observa mudanças de página de cronograma para injetar o botão de provas
+  // Observa mudanças de página de materiais para injetar o botão de provas
   const observerProvas = new MutationObserver(() => {
-    const schedulePage = document.getElementById('page-schedule');
-    if (schedulePage?.classList.contains('active')) injetarBotaoProvas();
+    const linksPage = document.getElementById('page-links');
+    if (linksPage?.classList.contains('active')) injetarBotaoProvas();
   });
   observerProvas.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
   injetarBotaoProvas();
 
-  // ── Botão de cronograma detalhado (sillabus) na aba Cronograma ─────────────
+  // ── Botão de cronograma detalhado (sillabus) na aba Materiais ─────────────
   function injetarBotaoSillabus() {
     if (document.getElementById('ia-sillabus-btn')) return;
-    const scheduleHeader = document.getElementById('schedule-calendar');
-    if (!scheduleHeader) return;
+    const fallback = document.getElementById('links-list');
+    if (!fallback) return;
 
     const btn = document.createElement('button');
     btn.id        = 'ia-sillabus-btn';
@@ -449,18 +444,14 @@ export function initIA(STATE, hooks) {
       <span>Importar Cronograma de Aulas</span>
     `;
     btn.addEventListener('click', () => abrirModalImportarSillabus(STATE, hooks));
-    // Insere abaixo do botão de foto de cronograma
-    const existingBtn = document.getElementById('ia-import-btn');
-    if (existingBtn) {
-      existingBtn.insertAdjacentElement('afterend', btn);
-    } else {
-      scheduleHeader.insertAdjacentElement('afterend', btn);
-    }
+    // Insere abaixo do botão de foto, ou do links-list como fallback
+    const anchor = document.getElementById('ia-import-btn') || fallback;
+    anchor.insertAdjacentElement('afterend', btn);
   }
 
   const observerSillabus = new MutationObserver(() => {
-    const schedulePage = document.getElementById('page-schedule');
-    if (schedulePage?.classList.contains('active')) injetarBotaoSillabus();
+    const linksPage = document.getElementById('page-links');
+    if (linksPage?.classList.contains('active')) injetarBotaoSillabus();
   });
   observerSillabus.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
   injetarBotaoSillabus();
