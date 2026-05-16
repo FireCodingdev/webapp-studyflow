@@ -1,0 +1,144 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper: usuário autenticado ─────────────────────────────────────────
+    function isAuth() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    // ── users/{uid} ────────────────────────────────────────────────────────
+    // Leitura: qualquer autenticado
+    // Escrita: só o próprio usuário, com campos permitidos
+    match /users/{uid} {
+      allow read: if isAuth();
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid);
+
+      // Subcoleção: profile/academic
+      match /profile/{docId} {
+        allow read:  if isAuth();
+        allow write: if isOwner(uid);
+      }
+
+      // Subcoleção: roomReads
+      match /roomReads/{roomId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // Subcoleção: presence
+      match /presence/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // ── user_profiles/{uid} ────────────────────────────────────────────────
+    // Leitura: qualquer autenticado (usado para discover)
+    // Escrita: só o próprio usuário
+    match /user_profiles/{uid} {
+      allow read:  if isAuth();
+      allow write: if isOwner(uid);
+    }
+
+    // ── posts/{postId} ─────────────────────────────────────────────────────
+    // Leitura: qualquer autenticado
+    // Criação: qualquer autenticado (campos validados)
+    // Atualização:
+    //   - Autor pode editar conteúdo
+    //   - Qualquer autenticado pode adicionar likes_uids (só o próprio uid)
+    //   - Qualquer autenticado pode adicionar replies
+    // Exclusão: só o autor
+    match /posts/{postId} {
+      allow read: if isAuth();
+
+      allow create: if isAuth()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0
+        && request.resource.data.content.size() <= 2000;
+
+      allow update: if isAuth() && (
+        // Autor pode editar qualquer campo
+        resource.data.authorId == request.auth.uid
+        ||
+        // Qualquer autenticado pode dar like (adicionar só o próprio uid)
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes_uids'])
+          && request.resource.data.likes_uids.hasAll(resource.data.likes_uids)
+          && request.resource.data.likes_uids.size() == resource.data.likes_uids.size() + 1
+          && request.resource.data.likes_uids.hasAny([request.auth.uid])
+        )
+        ||
+        // Qualquer autenticado pode adicionar replies
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replies'])
+      );
+
+      allow delete: if isAuth() && resource.data.authorId == request.auth.uid;
+    }
+
+    // ── connections/{uid} ─────────────────────────────────────────────────
+    // Leitura: qualquer autenticado (para verificar follows)
+    // Escrita: só o próprio usuário
+    match /connections/{uid} {
+      allow read:  if isAuth();
+      allow write: if isOwner(uid);
+    }
+
+    // ── notifications/{uid}/items/{itemId} ────────────────────────────────
+    // Leitura/escrita: só o dono das notificações
+    // Criação: qualquer autenticado pode criar notificação para outro
+    match /notifications/{uid}/items/{itemId} {
+      allow read:   if isOwner(uid);
+      allow create: if isAuth();
+      allow update: if isOwner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if isOwner(uid);
+    }
+
+    // ── subject_rooms/{roomId} ────────────────────────────────────────────
+    match /subject_rooms/{roomId} {
+      allow read: if isAuth();
+      allow create, update: if isAuth();
+
+      match /messages/{msgId} {
+        allow read:   if isAuth();
+        allow create: if isAuth()
+          && request.resource.data.authorId == request.auth.uid;
+        allow update, delete: if isAuth()
+          && resource.data.authorId == request.auth.uid;
+      }
+
+      match /members/{uid} {
+        allow read:  if isAuth();
+        allow write: if isOwner(uid);
+      }
+
+      match /typing/{uid} {
+        allow read:  if isAuth();
+        allow write: if isOwner(uid);
+      }
+    }
+
+    // ── groups/{groupId} ─────────────────────────────────────────────────
+    match /groups/{groupId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isAuth()
+        && resource.data.ownerId == request.auth.uid;
+      allow delete: if isAuth()
+        && resource.data.ownerId == request.auth.uid;
+
+      match /messages/{msgId} {
+        allow read:   if isAuth();
+        allow create: if isAuth()
+          && request.resource.data.authorId == request.auth.uid;
+        allow update, delete: if isAuth()
+          && resource.data.authorId == request.auth.uid;
+      }
+    }
+  }
+}
