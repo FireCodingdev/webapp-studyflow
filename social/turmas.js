@@ -3,6 +3,7 @@
 // chat em tempo real estilo WhatsApp, badges de não lidos, presence, typing.
 
 import { db, auth } from '../firebase.js';
+import { getFacapeData } from '../facape.js';
 
 import {
   doc, getDoc, setDoc, addDoc, getDocs, updateDoc, deleteDoc,
@@ -635,10 +636,67 @@ function _renderOnboarding(container, uid) {
   `;
 }
 
+// ── Inferir perfil a partir dos dados já existentes no app ───────────────────
+function _inferProfileFromApp(profile) {
+  const facape = getFacapeData();
+  const stateSubjects = window._STATE_subjects?.() || [];
+
+  const filled = { ...profile };
+
+  // Tentar mapear curso do FACAPE para um courseId da lista
+  if (!filled.courseId && facape?.curso) {
+    const cursoNorm = facape.curso.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const match = FACAPE_COURSES.find(c => {
+      const cn = c.name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      const sn = c.sigla.toLowerCase();
+      return cursoNorm.includes(cn.split(' ')[0]) || cursoNorm.includes(sn) || cn.includes(cursoNorm.split(' ')[0]);
+    });
+    if (match) {
+      filled.courseId = match.id;
+      filled.course   = filled.course || match.name;
+    }
+  }
+
+  // Inferir semestre e período a partir de facape.periodo (ex: "5º Período Noturno")
+  if (facape?.periodo) {
+    const p = facape.periodo.toLowerCase();
+    if (!filled.semester) {
+      const semMatch = p.match(/(\d+)/);
+      if (semMatch) filled.semester = parseInt(semMatch[1]);
+    }
+    if (!filled.period) {
+      if (p.includes('noturno'))     filled.period = 'noturno';
+      else if (p.includes('matutin')) filled.period = 'matutino';
+      else if (p.includes('vespert')) filled.period = 'vespertino';
+      else if (p.includes('integral')) filled.period = 'integral';
+      else if (p.includes('ead'))     filled.period = 'ead';
+    }
+  }
+
+  // Coletar matérias: FACAPE + STATE.subjects (sem duplicar por nome)
+  if (!filled.subjects?.length) {
+    const seen = new Set();
+    const merged = [];
+
+    const addSub = (name, code) => {
+      const key = name.toLowerCase().trim();
+      if (!seen.has(key)) { seen.add(key); merged.push({ name, code: code || '' }); }
+    };
+
+    (facape?.materias || []).forEach(m => addSub(m.nome, m.codigo));
+    stateSubjects.forEach(s => addSub(s.name || s.nome || '', ''));
+
+    if (merged.length) filled.subjects = merged;
+  }
+
+  return filled;
+}
+
 window.openTurmasOnboarding = async function() {
   const uid = auth.currentUser?.uid;
   if (!uid) return;
-  const profile = await loadFullAcademicProfile(uid) || {};
+  const saved = await loadFullAcademicProfile(uid) || {};
+  const profile = _inferProfileFromApp(saved);
 
   const courseOptions = FACAPE_COURSES.map(c =>
     `<option value="${c.id}" ${profile.courseId === c.id ? 'selected' : ''}>${esc(c.name)} (${c.tipo})</option>`
