@@ -1,13 +1,14 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    match /avatars/{userId}.jpg {
+    match /avatars/{file} {
       // Leitura pública — URLs podem ser usadas em <img> sem autenticação
       allow read: if true;
 
       // Escrita: apenas o próprio usuário autenticado, imagem ≤ 2 MB
+      // O arquivo deve se chamar exatamente {uid}.jpg
       allow write: if request.auth != null
-                   && request.auth.uid == userId
+                   && file == request.auth.uid + '.jpg'
                    && request.resource.size <= 2 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
     }
