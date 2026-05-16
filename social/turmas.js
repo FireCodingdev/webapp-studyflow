@@ -669,6 +669,7 @@ window._enterTurma = async function(courseId, semester, period) {
     subjectName: name,
   }));
 
+  // Mostra estrutura imediatamente com loading nos botões
   container.innerHTML = `
     <div class="turmas-inner-header">
       <button class="turmas-back-btn" onclick="window._renderTurmaListGlobal()">
@@ -683,47 +684,103 @@ window._enterTurma = async function(courseId, semester, period) {
 
     <div class="turmas-rooms-list" id="turmas-rooms-list">
       ${rooms.length ? rooms.map(room => `
-        <div class="turma-card" data-room-id="${room.id}"
-          onclick="window._enterSubjectRoom('${room.id}','${courseId}','${semInt}','${period}','${encodeURIComponent(room.subjectName)}')">
+        <div class="turma-card" data-room-id="${room.id}">
           <div class="turma-card-left">
             <div class="turma-card-icon">💬</div>
             <div class="turma-card-info">
               <span class="turma-card-name">${esc(room.subjectName)}</span>
+              <span class="turma-card-meta" id="meta-${room.id}">👥 ...</span>
             </div>
           </div>
-          <div class="turma-card-arrow">›</div>
+          <div class="turma-card-action">
+            <button class="turma-room-btn turma-room-btn--loading" id="btn-${room.id}" disabled>...</button>
+          </div>
         </div>
       `).join('') : `<div class="turmas-empty">Nenhuma matéria encontrada para este semestre.</div>`}
     </div>
   `;
 
-  // Carrega não-lidos e badge listeners em background
-  if (uid) {
-    const unreadArr = await Promise.all(rooms.map(r => getUnreadCount(uid, r.id)));
-    unreadArr.forEach((count, i) => {
-      _unreadCounts[rooms[i].id] = count;
-      if (count > 0) _updateRoomCardBadge(rooms[i].id, count);
+  // Carrega estado de cada sala em paralelo (membro? não-lidos? membros?)
+  if (uid && rooms.length) {
+    const [memberFlags, unreadArr] = await Promise.all([
+      Promise.all(rooms.map(r => isRoomMember(r.id, uid))),
+      Promise.all(rooms.map(r => getUnreadCount(uid, r.id))),
+    ]);
+
+    rooms.forEach((room, i) => {
+      const isMember = memberFlags[i];
+      const unread   = unreadArr[i];
+      _unreadCounts[room.id] = unread;
+
+      // Atualiza botão
+      const btn = document.getElementById(`btn-${room.id}`);
+      if (btn) {
+        btn.disabled  = false;
+        if (isMember) {
+          btn.textContent = unread > 0 ? `Abrir (${unread})` : 'Abrir';
+          btn.className   = 'turma-room-btn turma-room-btn--open';
+          btn.onclick     = () => window._openChat(room.id);
+        } else {
+          btn.textContent = 'Entrar';
+          btn.className   = 'turma-room-btn turma-room-btn--join';
+          btn.onclick     = () => window._turmaJoinRoom(
+            room.id, courseId, semInt, period, room.subjectName, btn
+          );
+        }
+      }
     });
+
+    // Busca contagem de membros de cada sala (não-bloqueante)
+    rooms.forEach(async room => {
+      try {
+        const snap = await getDoc(doc(db, 'subject_rooms', room.id));
+        const el = document.getElementById(`meta-${room.id}`);
+        if (el) el.textContent = `👥 ${snap.data()?.memberCount || 0} membro(s)`;
+      } catch { /* non-fatal */ }
+    });
+
     _initRoomBadgeListeners(uid, rooms);
   }
 };
 
-// ── Entrar em uma sala de matéria (lazy join + chat) ─────────────────────────
-window._enterSubjectRoom = async function(roomId, courseId, semester, period, encodedSubject) {
+// ── Entrar em sala a partir da aba Turmas ─────────────────────────────────────
+window._turmaJoinRoom = async function(roomId, courseId, semester, period, subjectName, btn) {
   const uid = auth.currentUser?.uid;
   if (!uid) return;
 
-  const subjectName = decodeURIComponent(encodedSubject);
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
 
   try {
     await ensureSubjectRoom(FACAPE_INSTITUTION, courseId, parseInt(semester), period, subjectName, '');
-    await joinSubjectRoom(roomId, uid);
-  } catch (err) {
-    console.warn('[turmas] ensureSubjectRoom:', err);
-  }
+    const ok = await joinSubjectRoom(roomId, uid);
 
-  window._openChat(roomId);
+    if (ok) {
+      if (typeof showToast === 'function') showToast(`✅ Você entrou em ${subjectName}!`);
+      if (btn) {
+        btn.disabled  = false;
+        btn.textContent = 'Abrir';
+        btn.className   = 'turma-room-btn turma-room-btn--open';
+        btn.onclick     = () => window._openChat(roomId);
+      }
+      // Atualiza meta de membros no card
+      const metaEl = document.getElementById(`meta-${roomId}`);
+      if (metaEl) {
+        const snap = await getDoc(doc(db, 'subject_rooms', roomId)).catch(() => null);
+        if (snap) metaEl.textContent = `👥 ${snap.data()?.memberCount || 1} membro(s)`;
+      }
+      // Recarrega aba Salas em background para incluir a nova sala
+      import('./groups.js').then(({ renderGroupsSection }) =>
+        renderGroupsSection(uid)
+      ).catch(() => {});
+    } else {
+      if (btn) { btn.disabled = false; btn.textContent = 'Entrar'; }
+    }
+  } catch (err) {
+    console.error('[turmas] _turmaJoinRoom:', err);
+    if (btn) { btn.disabled = false; btn.textContent = 'Entrar'; }
+  }
 };
+
 
 // ── Helper global: volta para a lista de turmas ────────────────────────────────
 window._renderTurmaListGlobal = function() {
@@ -1889,6 +1946,24 @@ function _injectStyles() {
       flex-shrink: 0;
       margin-left: 8px;
     }
+    .turma-card-action { flex-shrink: 0; margin-left: 8px; }
+    .turma-room-btn {
+      padding: 7px 16px;
+      border-radius: 20px;
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity .15s, transform .1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .turma-room-btn:active { transform: scale(.95); }
+    .turma-room-btn:disabled { opacity: .5; cursor: default; }
+    .turma-room-btn--loading { background: rgba(255,255,255,.08); color: var(--text-muted,#888); }
+    .turma-room-btn--join { background: var(--accent, #7c5cfc); color: #fff; }
+    .turma-room-btn--join:hover { opacity: .88; }
+    .turma-room-btn--open { background: rgba(124,92,252,.15); color: var(--accent, #7c5cfc); border: 1px solid rgba(124,92,252,.3); }
     .turmas-empty {
       text-align: center;
       color: var(--text-muted, #888);
