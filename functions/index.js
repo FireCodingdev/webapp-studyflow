@@ -23,6 +23,26 @@ const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${
 const CLASSROOM_CLIENT_ID = '92968084905-1ete8rjlfs6e3uo3pj4h351bdm8ak947.apps.googleusercontent.com';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// validateAppCheck — modo monitor (não bloqueia requisições sem token ainda).
+// Trocar o early-return por 401 quando todos os clientes tiverem atualizado
+// (modo enforce): remover o bloco "if (!token)" e deixar só o try/catch.
+// ─────────────────────────────────────────────────────────────────────────────
+async function validateAppCheck(req, res) {
+  const token = req.headers['x-firebase-appcheck'];
+  if (!token) {
+    console.warn('[AppCheck] Token ausente — requisição permitida (modo monitor)');
+    return true;
+  }
+  try {
+    await getAppCheck().verifyToken(token);
+    return true;
+  } catch {
+    res.status(401).json({ error: 'App Check inválido' });
+    return false;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // classroomToken — troca o authorization code por access_token + refresh_token
 // e renova o access_token quando expirado.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,14 +59,8 @@ exports.classroomToken = onRequest(
       return res.status(405).json({ error: 'Método não permitido' });
     }
 
-    // 2. Valida App Check
-    const appCheckToken = req.headers['x-firebase-appcheck'];
-    if (!appCheckToken) return res.status(401).json({ error: 'App Check inválido' });
-    try {
-      await getAppCheck().verifyToken(appCheckToken);
-    } catch {
-      return res.status(401).json({ error: 'App Check inválido' });
-    }
+    // 2. Valida App Check (modo monitor — ver helper validateAppCheck)
+    if (!(await validateAppCheck(req, res))) return;
 
     // 3. Valida autenticação Firebase
     const authHeader = req.headers.authorization || '';
@@ -163,14 +177,8 @@ exports.geminiProxy = onRequest(
       return res.status(405).json({ error: 'Método não permitido' });
     }
 
-    // Valida App Check
-    const appCheckToken = req.headers['x-firebase-appcheck'];
-    if (!appCheckToken) return res.status(401).json({ error: 'App Check inválido' });
-    try {
-      await getAppCheck().verifyToken(appCheckToken);
-    } catch {
-      return res.status(401).json({ error: 'App Check inválido' });
-    }
+    // Valida App Check (modo monitor — ver helper validateAppCheck)
+    if (!(await validateAppCheck(req, res))) return;
 
     const authHeader = req.headers.authorization || '';
     const idToken    = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;

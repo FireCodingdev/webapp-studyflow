@@ -38,20 +38,23 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 // ── App Check (reCAPTCHA v3) ─────────────────────────────────────────────────
-// Obtenha a site key em: Firebase Console → App Check → Apps → Registrar app →
-// selecione reCAPTCHA v3 → copie a "Site key" gerada no Google reCAPTCHA Admin.
+// Trocar pela site key obtida em Firebase Console > App Check > Web.
+// Quando migrar para app nativo Android, substituir ReCaptchaV3Provider por
+// PlayIntegrityProvider — o restante do código (getAppCheckToken, headers) não muda.
 const appCheck = initializeAppCheck(app, {
   provider: new ReCaptchaV3Provider('6LfaU-wsAAAAAFK9CM50OV0r04yMZBLmtpPwJHKn'),
   isTokenAutoRefreshEnabled: true,
 });
 
-// Retorna o token atual do App Check (string vazia em caso de falha).
+// Retorna o token atual do App Check, ou null em caso de falha.
+// Não lança exceção — App Check nunca deve quebrar o fluxo principal.
 export async function getAppCheckToken() {
   try {
     const result = await getAppCheckToken_(appCheck, false);
     return result.token;
-  } catch {
-    return '';
+  } catch (err) {
+    console.warn('[AppCheck] Falha ao obter token:', err?.message);
+    return null;
   }
 }
 

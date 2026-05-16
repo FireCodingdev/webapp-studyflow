@@ -41,9 +41,9 @@ async function analisarImagemCronograma(imageFile) {
   const response = await fetch(PROXY_URL, {
     method: 'POST',
     headers: {
-      'Content-Type':        'application/json',
-      'Authorization':       `Bearer ${idToken}`,
-      'X-Firebase-AppCheck': appCheckToken,
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${idToken}`,
+      ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
     },
     body: JSON.stringify({ imageBase64: base64, mimeType }),
   });

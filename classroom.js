@@ -162,9 +162,9 @@ async function trocarCodePorToken(code, uid) {
     const resp = await fetch(CLASSROOM_TOKEN_FUNCTION, {
       method: 'POST',
       headers: {
-        'Content-Type':        'application/json',
-        'Authorization':       `Bearer ${idToken}`,
-        'X-Firebase-AppCheck': appCheckToken,
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${idToken}`,
+        ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
       },
       body: JSON.stringify({
         action:       'exchange',
@@ -211,9 +211,9 @@ async function renovarToken(uid, refreshToken) {
     const resp = await fetch(CLASSROOM_TOKEN_FUNCTION, {
       method: 'POST',
       headers: {
-        'Content-Type':        'application/json',
-        'Authorization':       `Bearer ${idToken}`,
-        'X-Firebase-AppCheck': appCheckToken,
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${idToken}`,
+        ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
       },
       body: JSON.stringify({ action: 'refresh', refresh_token: refreshToken }),
     });
@@ -891,9 +891,9 @@ window._gerarRespostaIA = async function() {
     const resp = await fetch(GEMINI_PROXY, {
       method: 'POST',
       headers: {
-        'Content-Type':        'application/json',
-        'Authorization':       `Bearer ${idToken}`,
-        'X-Firebase-AppCheck': appCheckToken,
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${idToken}`,
+        ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
       },
       body: JSON.stringify({ mode: 'answer', titulo, descricao }),
     });
@@ -954,9 +954,9 @@ window._resumirPostClassroom = async function(btn) {
     const resp = await fetch(GEMINI_PROXY, {
       method: 'POST',
       headers: {
-        'Content-Type':        'application/json',
-        'Authorization':       `Bearer ${idToken}`,
-        'X-Firebase-AppCheck': appCheckToken,
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${idToken}`,
+        ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
       },
       body: JSON.stringify(body),
     });
@@ -1096,9 +1096,9 @@ function _mostrarModalResumo(titulo, markdown, usedFile, driveFileId, driveAltLi
       const resp = await fetch(GEMINI_PROXY, {
         method: 'POST',
         headers: {
-          'Content-Type':        'application/json',
-          'Authorization':       `Bearer ${idToken}`,
-          'X-Firebase-AppCheck': acToken,
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${idToken}`,
+          ...(acToken ? { 'X-Firebase-AppCheck': acToken } : {}),
         },
         body: JSON.stringify({
           mode: 'summarize',
