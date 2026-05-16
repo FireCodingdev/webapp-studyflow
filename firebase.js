@@ -41,7 +41,7 @@ const db = getFirestore(app);
 // Obtenha a site key em: Firebase Console → App Check → Apps → Registrar app →
 // selecione reCAPTCHA v3 → copie a "Site key" gerada no Google reCAPTCHA Admin.
 const appCheck = initializeAppCheck(app, {
-  provider: new ReCaptchaV3Provider('RECAPTCHA_SITE_KEY'),
+  provider: new ReCaptchaV3Provider('6LfaU-wsAAAAAFK9CM50OV0r04yMZBLmtpPwJHKn'),
   isTokenAutoRefreshEnabled: true,
 });
 
