@@ -40,6 +40,12 @@ export function renderPostCard(post, currentUid) {
     academicBadge = `<span class="post-academic-badge">${escapeHtml(sigla)} · ${sem}${escapeHtml(per)}</span>`;
   }
 
+  // Likes: usa array de UIDs
+  const likesUids  = post.likes_uids || [];
+  const likeCount  = likesUids.length;
+  const alreadyLiked = currentUid ? likesUids.includes(currentUid) : false;
+  const likeDisabled = alreadyLiked ? 'disabled style="opacity:.5;cursor:default"' : '';
+
   return `
     <div class="post-card" data-post-id="${post.id}">
       <div class="post-card-header">
@@ -53,8 +59,8 @@ export function renderPostCard(post, currentUid) {
       </div>
       <div class="post-card-body">${content}</div>
       <div class="post-card-actions">
-        <button class="post-action-btn" onclick="window.likePost('${post.id}', this)">
-          ❤️ <span class="post-like-count">${post.likes || 0}</span>
+        <button class="post-action-btn" onclick="window.likePost('${post.id}', this)" ${likeDisabled}>
+          ❤️ <span class="post-like-count">${likeCount}</span>
         </button>
         <button class="post-action-btn" onclick="window.openReplyModal('${post.id}')">
           💬 Responder
@@ -67,12 +73,36 @@ export function renderPostCard(post, currentUid) {
 
 // ── Like num post ──────────────────────────────────────────────────────────────
 window.likePost = async function(postId, btn) {
+  if (btn?.disabled) return;
   try {
-    const { db } = await import('../firebase.js');
-    const { doc, updateDoc, increment } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-    await updateDoc(doc(db, 'posts', postId), { likes: increment(1) });
+    const { db, auth } = await import('../firebase.js');
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const { doc, updateDoc, arrayUnion, addDoc, collection, getDoc } =
+      await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+
+    await updateDoc(doc(db, 'posts', postId), {
+      likes_uids: arrayUnion(user.uid),
+    });
+
+    // Atualiza UI imediatamente
     const countEl = btn?.querySelector('.post-like-count');
     if (countEl) countEl.textContent = String(parseInt(countEl.textContent || '0') + 1);
+    if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'default'; }
+
+    // Notifica autor (sem notificar a si mesmo)
+    const postSnap = await getDoc(doc(db, 'posts', postId));
+    if (postSnap.exists() && postSnap.data().authorId !== user.uid) {
+      await addDoc(collection(db, 'notifications', postSnap.data().authorId, 'items'), {
+        type: 'like',
+        fromUser: user.uid,
+        fromUserName: user.displayName || user.email?.split('@')[0] || '',
+        postId,
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+    }
   } catch (err) {
     console.error('[post-card] Erro ao curtir:', err);
   }
@@ -120,7 +150,9 @@ window.submitReply = async function(postId) {
     const postSnap = await getDoc(doc(db, 'posts', postId));
     if (postSnap.exists() && postSnap.data().authorId !== user.uid) {
       await addDoc(collection(db, 'notifications', postSnap.data().authorId, 'items'), {
-        type: 'reply', fromUser: user.uid, postId, read: false,
+        type: 'reply', fromUser: user.uid,
+        fromUserName: user.displayName || user.email?.split('@')[0] || '',
+        postId, read: false,
         createdAt: new Date().toISOString(),
       });
     }
